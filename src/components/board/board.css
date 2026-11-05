@@ -1060,3 +1060,97 @@
     bottom: 72px;
   }
 }
+
+/* ---- Sections ---- */
+.fx-section-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.fx-board .excalidraw {
+  position: relative;
+  z-index: 1;
+}
+
+/* Excalidraw draws section names as page elements; style them as pills. */
+.fx-board [id*="-frame-name-"] {
+  margin-bottom: 6px;
+  padding: 3px 9px 3px 25px !important;
+  border-radius: 6px;
+  background: #ebebeb url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%231e1e1e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='4' width='16' height='16' rx='2'/%3E%3Cpath d='M4 9.5h5.5a1 1 0 0 0 1-1V4'/%3E%3C/svg%3E") no-repeat 7px center;
+  color: #1e1e1e !important;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif !important;
+  font-size: 12px !important;
+  font-weight: 600;
+  line-height: 18px !important;
+  cursor: var(--fx-cursor, default) !important;
+}
+
+.fx-board [id*="-frame-name-"]:hover {
+  background-color: #e0e0e0;
+}
+
+.fx-board [id*="-frame-name-"] input {
+  font-family: Inter, system-ui, sans-serif !important;
+  font-size: 12px !important;
+  font-weight: 600;
+  background: #fff !important;
+}
+
+/* ---- Text toggles and link field (selection toolbar) ---- */
+.fx-st-toggle {
+  padding: 0 7px !important;
+  justify-content: center;
+}
+
+.fx-st-btn[data-on] {
+  background: #474747 !important;
+}
+
+.fx-link-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fx-link-input {
+  width: 220px;
+  height: 30px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  border: 1px solid #444;
+  border-radius: 7px;
+  outline: none;
+  background: #2b2b2b;
+  color: #fff;
+  font: inherit;
+  cursor: text;
+}
+
+.fx-link-input:focus {
+  border-color: var(--fx-blue, #0d99ff);
+}
+
+.fx-link-save {
+  height: 30px;
+  padding: 0 10px !important;
+  border-radius: 7px;
+  background: var(--fx-accent, #9747ff) !important;
+  font-weight: 600;
+}
+
+.fx-link-remove {
+  height: 30px;
+  padding: 0 8px !important;
+  border-radius: 7px;
+  color: rgb(255 255 255 / 70%) !important;
+}
+
+.fx-link-remove:hover {
+  background: #2e2e2e !important;
+}

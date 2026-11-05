@@ -211,6 +211,47 @@ export const AlignIcon = ({ size = 18, align = "center" }: P & { align?: "left" 
   </svg>
 );
 
+export const BoldIcon = ({ size = 18 }: P) => (
+  <svg {...svg(size)} viewBox="0 0 18 18" strokeWidth={1.8}>
+    <path d="M5.5 3.5h4.25a2.75 2.75 0 0 1 0 5.5H5.5zM5.5 9h5a3 3 0 0 1 0 6h-5z" />
+  </svg>
+);
+
+export const StrikeIcon = ({ size = 18 }: P) => (
+  <svg {...svg(size)} viewBox="0 0 18 18" strokeWidth={1.3}>
+    <path d="M3 9h12M12.3 5.6C11.9 4.4 10.6 3.6 9 3.6c-1.9 0-3.3 1-3.3 2.5 0 .9.5 1.6 1.4 2M5.6 12.2c.3 1.3 1.7 2.2 3.5 2.2 2 0 3.4-1 3.4-2.5 0-.6-.2-1.1-.6-1.5" />
+  </svg>
+);
+
+export const LinkIcon = ({ size = 18 }: P) => (
+  <svg {...svg(size)} viewBox="0 0 18 18" strokeWidth={1.3}>
+    <path d="M7.5 10.5a3 3 0 0 0 4.2 0l2.3-2.3a3 3 0 0 0-4.2-4.2l-.9.9M10.5 7.5a3 3 0 0 0-4.2 0L4 9.8A3 3 0 0 0 8.2 14l.9-.9" />
+  </svg>
+);
+
+export const ListIcon = ({ size = 18 }: P) => (
+  <svg {...svg(size)} viewBox="0 0 18 18" strokeWidth={1.3}>
+    <path d="M7 5h8M7 9h8M7 13h8" />
+    <circle cx="3.75" cy="5" r=".9" fill="currentColor" />
+    <circle cx="3.75" cy="9" r=".9" fill="currentColor" />
+    <circle cx="3.75" cy="13" r=".9" fill="currentColor" />
+  </svg>
+);
+
+export const FitIcon = ({ size = 18 }: P) => (
+  <svg {...svg(size)} viewBox="0 0 18 18" strokeWidth={1.3}>
+    <rect x="5.5" y="5.5" width="7" height="7" rx="1" />
+    <path d="M2.5 6V3.5a1 1 0 0 1 1-1H6M12 2.5h2.5a1 1 0 0 1 1 1V6M15.5 12v2.5a1 1 0 0 1-1 1H12M6 15.5H3.5a1 1 0 0 1-1-1V12" />
+  </svg>
+);
+
+export const LockIcon = ({ size = 18, open }: P & { open?: boolean }) => (
+  <svg {...svg(size)} viewBox="0 0 18 18" strokeWidth={1.3}>
+    <rect x="4" y="8" width="10" height="7" rx="1.5" />
+    <path d={open ? "M6.5 8V5.8a2.5 2.5 0 0 1 4.9-.7" : "M6.5 8V5.8a2.5 2.5 0 0 1 5 0V8"} />
+  </svg>
+);
+
 export const LineTool = ({ size }: P) => (
   <svg {...svg(size)}>
     <path d="M5.5 18.5l13-13" />

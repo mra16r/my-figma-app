@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, type ReactNode } from "react";
+import { useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import {
   CaptureUpdateAction,
   FONT_FAMILY,
@@ -20,7 +20,19 @@ import {
   withFillMode,
   type StrokeMode,
 } from "./Palette";
-import { AlignIcon, ChevronDown, DotsIcon, FontIcon, StrokeIcon } from "./icons";
+import {
+  AlignIcon,
+  BoldIcon,
+  ChevronDown,
+  DotsIcon,
+  FitIcon,
+  FontIcon,
+  LinkIcon,
+  ListIcon,
+  LockIcon,
+  StrikeIcon,
+  StrokeIcon,
+} from "./icons";
 import { canConvert, convertShapes, SHAPE_LABELS, SHAPES, shapeOf, type ShapeKind } from "./shapes";
 import { SHAPE_ICONS } from "./Toolbar";
 
@@ -101,7 +113,7 @@ type Patch = Record<string, unknown>;
 type TextLike = ExcalidrawElement & { fontSize: number; fontFamily: number; textAlign: string; verticalAlign: string };
 
 // Where text sits inside a shape (same rules as Excalidraw's own layout).
-const PAD = 5;
+const PAD = 14; // same as the patched Excalidraw padding (scripts/patch-excalidraw.mjs)
 function labelArea(c: ExcalidrawElement) {
   const k = c.type === "ellipse" ? Math.SQRT2 / 2 : c.type === "diamond" ? 0.5 : 1;
   const ox = PAD + (c.type === "ellipse" ? (c.width / 2) * (1 - Math.SQRT2 / 2) : c.type === "diamond" ? c.width / 4 : 0);
@@ -153,7 +165,8 @@ function update(
     if (!patch && patchText && el.type === "text" && (selectedIds[el.id] || isLabel)) patch = patchText(el);
     if (!patch) return el;
     const updated = newElementWith(el, patch as never);
-    if (el.type === "text" && ("fontSize" in patch || "fontFamily" in patch || "textAlign" in patch)) remeasure.push(updated);
+    const resizes = ["fontSize", "fontFamily", "textAlign", "customData", "originalText"].some((k) => k in patch);
+    if (el.type === "text" && resizes) remeasure.push(updated);
     return updated;
   });
   if (remeasure.length) {
@@ -247,10 +260,12 @@ export function SelectionToolbar({ api }: { api: ExcalidrawImperativeAPI }) {
   const [x1, y1, x2, y2] = getCommonBounds([...selected, ...labels]);
   const top = sceneCoordsToViewportCoords({ sceneX: (x1 + x2) / 2, sceneY: y1 }, s);
   const bottom = sceneCoordsToViewportCoords({ sceneX: (x1 + x2) / 2, sceneY: y2 }, s);
-  const above = top.y - 60 > 64;
+  // Sections have their name pill above them; keep the toolbar clear of it.
+  const lift = selected.some((el) => kindOf(el) === "section") ? 30 : 0;
+  const above = top.y - 60 - lift > 64;
   const style = {
     left: Math.min(Math.max(top.x, 200), window.innerWidth - 200),
-    top: above ? top.y - 56 : Math.min(bottom.y + 16, window.innerHeight - 140),
+    top: above ? top.y - 56 - lift : Math.min(bottom.y + 16, window.innerHeight - 140),
   };
 
   const first = selected[0];
@@ -275,6 +290,33 @@ export function SelectionToolbar({ api }: { api: ExcalidrawImperativeAPI }) {
         style={first.strokeStyle}
         onChange={(p) => update(api, () => p)}
       />,
+    );
+  } else if (only("section")) {
+    groups.push(
+      <FillButton key="fill" value={first.backgroundColor} onChange={(c) => update(api, () => ({ backgroundColor: c }))} />,
+      <StrokeButton key="stroke" color={first.strokeColor} style="solid" onChange={(p) => update(api, () => p)} />,
+      <span key="d1" className="fx-st-divider" />,
+      <button
+        key="fit"
+        type="button"
+        className="fx-st-btn"
+        data-tip="Resize to fit contents"
+        aria-label="Resize to fit contents"
+        onClick={() => fitSections(api, selected)}
+      >
+        <FitIcon />
+      </button>,
+      <button
+        key="lock"
+        type="button"
+        className="fx-st-btn"
+        data-on={first.locked || undefined}
+        data-tip={first.locked ? "Unlock section" : "Lock section"}
+        aria-label={first.locked ? "Unlock section" : "Lock section"}
+        onClick={() => update(api, () => ({ locked: !first.locked }))}
+      >
+        <LockIcon open={!first.locked} />
+      </button>,
     );
   } else if (only("sticky")) {
     groups.push(
@@ -342,6 +384,36 @@ export function SelectionToolbar({ api }: { api: ExcalidrawImperativeAPI }) {
           },
         }))}
       />,
+      <span key="d4" className="fx-st-divider" />,
+      <Toggle
+        key="bold"
+        label="Bold"
+        on={!!text.customData?.bold}
+        icon={<BoldIcon />}
+        onClick={() => update(api, null, (el) => ({ customData: { ...el.customData, bold: !text.customData?.bold } }))}
+      />,
+      <Toggle
+        key="strike"
+        label="Strikethrough"
+        on={!!text.customData?.strike}
+        icon={<StrikeIcon />}
+        onClick={() => update(api, null, (el) => ({ customData: { ...el.customData, strike: !text.customData?.strike } }))}
+      />,
+      <LinkButton key="link" value={first.link ?? ""} onChange={(link) => update(api, () => ({ link }))} />,
+      <Toggle
+        key="list"
+        label="Bulleted list"
+        on={hasBullets(text)}
+        icon={<ListIcon />}
+        onClick={() => {
+          const add = !hasBullets(text);
+          update(api, null, (el) => {
+            const next = toggleBullets((el as TextLike & { originalText: string }).originalText, add);
+            return { originalText: next, text: next };
+          });
+        }}
+      />,
+      <span key="d5" className="fx-st-divider" />,
       <Dropdown
         key="align"
         label="Alignment"
@@ -601,8 +673,149 @@ function Dropdown({
   );
 }
 
+const BULLET = "• ";
+
+function hasBullets(text: TextLike): boolean {
+  const lines = ((text as TextLike & { originalText?: string }).originalText ?? "").split("\n").filter((l) => l.trim());
+  return lines.length > 0 && lines.every((l) => l.startsWith(BULLET));
+}
+
+/** Adds or removes "• " at the start of every non-empty line. */
+function toggleBullets(source: string, add: boolean): string {
+  return source
+    .split("\n")
+    .map((line) => {
+      if (!line.trim()) return line;
+      if (add) return line.startsWith(BULLET) ? line : BULLET + line;
+      return line.startsWith(BULLET) ? line.slice(BULLET.length) : line;
+    })
+    .join("\n");
+}
+
+/** Shrinks or grows sections to wrap what's inside them, with some room. */
+function fitSections(api: ExcalidrawImperativeAPI, sections: readonly ExcalidrawElement[]) {
+  const ROOM = 40;
+  const ids = new Set(sections.map((s) => s.id));
+  const all = api.getSceneElementsIncludingDeleted();
+  const next = all.map((el) => {
+    if (!ids.has(el.id)) return el;
+    const inside = all.filter((c) => !c.isDeleted && c.frameId === el.id);
+    if (!inside.length) return el;
+    const [x1, y1, x2, y2] = getCommonBounds(inside);
+    return newElementWith(el, {
+      x: x1 - ROOM,
+      y: y1 - ROOM,
+      width: x2 - x1 + ROOM * 2,
+      height: y2 - y1 + ROOM * 2,
+    } as never);
+  });
+  api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+}
+
+function Toggle({
+  label,
+  shortcut,
+  on,
+  icon,
+  onClick,
+}: {
+  label: string;
+  shortcut?: string;
+  on: boolean;
+  icon: ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="fx-st-btn fx-st-toggle"
+      data-on={on || undefined}
+      data-tip={shortcut ? `${label}  ${shortcut}` : label}
+      aria-label={label}
+      aria-pressed={on}
+      onClick={onClick}
+    >
+      {icon}
+    </button>
+  );
+}
+
+function LinkButton({ value, onChange }: { value: string; onChange: (link: string | null) => void }) {
+  const menu = useMenu();
+  const [draft, setDraft] = useState(value);
+  const save = () => {
+    const url = draft.trim();
+    onChange(url ? (/^[a-z][\w+.-]*:/i.test(url) ? url : `https://${url}`) : null);
+    menu.close();
+  };
+  return (
+    <>
+      <button
+        type="button"
+        className="fx-st-btn fx-st-toggle"
+        data-on={!!value || undefined}
+        data-tip={value ? "Edit link" : "Add link"}
+        aria-label={value ? "Edit link" : "Add link"}
+        data-open={!!menu.anchor || undefined}
+        onClick={(e) => {
+          setDraft(value);
+          menu.toggle(e.currentTarget);
+        }}
+      >
+        <LinkIcon />
+      </button>
+      {menu.anchor && (
+        <Popover anchor={menu.anchor} onClose={menu.close} allowInput>
+          <form
+            className="fx-link-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              save();
+            }}
+          >
+            <input
+              className="fx-link-input"
+              value={draft}
+              placeholder="Paste a link"
+              autoFocus
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => e.stopPropagation()}
+            />
+            <button type="submit" className="fx-link-save">
+              Save
+            </button>
+            {value && (
+              <button
+                type="button"
+                className="fx-link-remove"
+                onClick={() => {
+                  onChange(null);
+                  menu.close();
+                }}
+              >
+                Remove
+              </button>
+            )}
+          </form>
+        </Popover>
+      )}
+    </>
+  );
+}
+
 /** Small dark popover above a button (used for the shape grid). */
-function Popover({ anchor, onClose, children }: { anchor: DOMRect; onClose: () => void; children: ReactNode }) {
+function Popover({
+  anchor,
+  onClose,
+  children,
+  allowInput,
+}: {
+  anchor: DOMRect;
+  onClose: () => void;
+  children: ReactNode;
+  /** Let clicks focus inputs inside (otherwise the canvas keeps focus). */
+  allowInput?: boolean;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const onDown = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && onClose();
@@ -619,7 +832,9 @@ function Popover({ anchor, onClose, children }: { anchor: DOMRect; onClose: () =
       ref={ref}
       className="fx-dark-pop"
       style={{ left: anchor.left + anchor.width / 2, top: anchor.top - 8 }}
-      onMouseDown={(e) => e.preventDefault()}
+      onMouseDown={(e) => {
+        if (!(allowInput && e.target instanceof HTMLInputElement)) e.preventDefault();
+      }}
     >
       {children}
     </div>

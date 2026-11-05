@@ -1,0 +1,95 @@
+import { useEffect } from "react";
+import { CaptureUpdateAction, newElementWith } from "@excalidraw/excalidraw";
+import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+
+export const TEXT_DARK = "#1e1e1e";
+export const TEXT_LIGHT = "#ffffff";
+export const SECTION_FILL = "#ffffff";
+export const SECTION_STROKE = "#d4d4d4";
+
+/** "#abc", "#aabbcc" or "#aabbccdd" → [r, g, b, a] (0–1 alpha). */
+function parseHex(color: string): [number, number, number, number] | null {
+  const m = color.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i);
+  if (!m) return null;
+  let hex = m[1];
+  if (hex.length === 3) hex = hex.split("").map((c) => c + c).join("");
+  const n = (i: number) => parseInt(hex.slice(i, i + 2), 16);
+  return [n(0), n(2), n(4), hex.length === 8 ? n(6) / 255 : 1];
+}
+
+/** Black or white, whichever reads better on this fill. */
+export function readableTextColor(fill: string): string {
+  const rgba = parseHex(fill);
+  if (!rgba) return TEXT_DARK; // transparent or unknown: the canvas is light
+  const [r, g, b, a] = rgba;
+  // See-through fills blend with the light canvas.
+  const mix = (c: number) => (c * a + 245 * (1 - a)) / 255;
+  const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const luminance = 0.2126 * lin(mix(r)) + 0.7152 * lin(mix(g)) + 0.0722 * lin(mix(b));
+  return luminance < 0.4 ? TEXT_LIGHT : TEXT_DARK;
+}
+
+const isSection = (el: ExcalidrawElement) => el.type === "frame" || el.type === "magicframe";
+
+/**
+ * Keeps things tidy as you work:
+ *  - text inside a shape is black or white depending on the shape's color
+ *  - new sections get a white fill, a soft outline and a "Section N" name
+ */
+export function useAutoStyles(api: ExcalidrawImperativeAPI | null): void {
+  useEffect(() => {
+    if (!api) return;
+    let frame = 0;
+
+    const fix = () => {
+      frame = 0;
+      const elements = api.getSceneElementsIncludingDeleted();
+      const byId = new Map(elements.map((el) => [el.id, el]));
+      const patches = new Map<string, Record<string, unknown>>();
+
+      let sectionNumber = 0;
+      for (const el of elements) {
+        const m = !el.isDeleted && isSection(el) && el.name?.match(/^Section (\d+)$/);
+        if (m) sectionNumber = Math.max(sectionNumber, Number(m[1]));
+      }
+
+      for (const el of elements) {
+        if (el.isDeleted) continue;
+        if (el.type === "text" && el.containerId) {
+          const container = byId.get(el.containerId);
+          if (!container || container.isDeleted || container.type === "arrow") continue;
+          const want = readableTextColor(container.backgroundColor);
+          if (el.strokeColor !== want) patches.set(el.id, { strokeColor: want });
+        } else if (isSection(el) && !el.customData?.section) {
+          patches.set(el.id, {
+            name: el.name && el.name !== "Frame" ? el.name : `Section ${++sectionNumber}`,
+            backgroundColor: SECTION_FILL,
+            strokeColor: SECTION_STROKE,
+            customData: { ...el.customData, section: true },
+          });
+        }
+      }
+
+      if (!patches.size) return;
+      api.updateScene({
+        elements: elements.map((el) => {
+          const patch = patches.get(el.id);
+          return patch ? newElementWith(el, patch as never) : el;
+        }),
+        captureUpdate: CaptureUpdateAction.EVENTUALLY,
+      });
+    };
+
+    // A short timer (not an animation frame) so it also runs in a background tab.
+    const schedule = () => {
+      if (!frame) frame = window.setTimeout(fix, 30);
+    };
+    schedule();
+    const off = api.onChange(schedule);
+    return () => {
+      off();
+      window.clearTimeout(frame);
+    };
+  }, [api]);
+}

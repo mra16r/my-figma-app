@@ -35,7 +35,9 @@ import {
   type Page,
 } from "../../storage/boards";
 import { renameNode } from "../../storage/library";
+import { useAutoStyles } from "./autoStyle";
 import { CanvasOverlay, STICKY_SIZE, useArrowCursor, useDotGrid } from "./CanvasFeel";
+import { SectionLayer, withSectionBackgrounds } from "./SectionLayer";
 import { FilePanel, type PageMeta } from "./FilePanel";
 import type { MenuEntry } from "./Menu";
 import { SelectionToolbar, STICKY_COLORS } from "./SelectionToolbar";
@@ -72,6 +74,8 @@ const DEFAULT_STYLE: Partial<AppState> = {
   currentItemStrokeWidth: 2,
   currentItemRoundness: "round",
   currentItemArrowType: "elbow",
+  // Sections: names as pills (styled in CSS), fill and outline drawn by SectionLayer, no clipping.
+  frameRendering: { enabled: true, name: true, outline: false, clip: false },
 };
 
 const SAVE_DELAY_MS = 1000;
@@ -197,7 +201,7 @@ export default function BoardView({ board, location, hasThumbnail, content, imag
             return;
           }
           const png = await exportToBlob({
-            elements: cover,
+            elements: withSectionBackgrounds(cover),
             appState: { ...appState, exportBackground: true, viewBackgroundColor: "#ffffff", exportWithDarkMode: false },
             files,
             mimeType: "image/png",
@@ -488,11 +492,12 @@ export default function BoardView({ board, location, hasThumbnail, content, imag
   const pageName = pages.find((p) => p.id === currentPage)?.name ?? "Page";
   const exportPage = async (type: "png" | "svg") => {
     if (!api) return;
-    const elements = api.getSceneElements();
-    if (elements.length === 0) {
+    const onPage = api.getSceneElements();
+    if (onPage.length === 0) {
       api.setToast({ message: "This page is empty.", duration: 2000 });
       return;
     }
+    const elements = withSectionBackgrounds(onPage);
     const appState = { ...api.getAppState(), exportBackground: true, viewBackgroundColor: "#ffffff", exportWithDarkMode: false };
     const filename = `${name} - ${pageName}.${type}`;
     if (type === "png") {
@@ -583,7 +588,7 @@ export default function BoardView({ board, location, hasThumbnail, content, imag
   useEffect(() => {
     if (!api) return;
     const onKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
+      const target = e.target instanceof Element ? e.target : null; // can be the page itself
       if (target?.closest("input, textarea, [contenteditable='true']")) return;
       if (api.getAppState().editingTextElement || e.ctrlKey || e.metaKey || e.altKey) return;
       const key = e.key.toLowerCase();
@@ -606,9 +611,16 @@ export default function BoardView({ board, location, hasThumbnail, content, imag
 
   useArrowCursor(api ? pageEl : null); // once the canvas exists
   useDotGrid(api, pageEl);
+  useAutoStyles(api);
+
+  // Local testing only (left out of the live build): lets test scripts drive the canvas.
+  useEffect(() => {
+    if (import.meta.env.DEV && api) (window as unknown as { __board?: unknown }).__board = api;
+  }, [api]);
 
   return (
     <div className="fx-board" ref={setPageEl}>
+      {api && <SectionLayer api={api} />}
       <Excalidraw
         initialData={initialData}
         excalidrawAPI={setApi}
