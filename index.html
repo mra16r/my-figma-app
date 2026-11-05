@@ -8,6 +8,18 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&display=swap" rel="stylesheet" />
     <title>My Figma App</title>
+    <script>
+      // Light or dark before anything draws (the app keeps it up to date: src/theme.ts).
+      (function () {
+        var c = "system";
+        try {
+          c = localStorage.getItem("mfa.theme") || "system";
+        } catch (e) {}
+        var dark = c === "dark" || (c !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+        document.documentElement.style.colorScheme = dark ? "dark" : "light";
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

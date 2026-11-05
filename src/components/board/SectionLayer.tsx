@@ -3,6 +3,7 @@ import { convertToExcalidrawElements, ROUNDNESS, sceneCoordsToViewportCoords } f
 import type { ExcalidrawElement, NonDeleted } from "@excalidraw/excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { SECTION_STROKE } from "./autoStyle";
+import { darkColor, isDarkBoard } from "./darkInk";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -66,7 +67,8 @@ export function SectionLayer({ api }: { api: ExcalidrawImperativeAPI }) {
           shadow.setAttribute("height", String(Math.max(0, h)));
           shadow.setAttribute("fill", baseFill(el.backgroundColor));
           if (el.angle) shadow.setAttribute("transform", `rotate(${(el.angle * 180) / Math.PI} ${x + w / 2} ${y + h / 2})`);
-          shadow.style.filter = `drop-shadow(0 ${3 * z}px ${3 * z}px rgb(0 0 0 / 14%)) drop-shadow(0 0 ${0.5 * z}px rgb(0 0 0 / 12%))`;
+          // Shadow colors come from board.css (stronger in dark mode).
+          shadow.style.filter = `drop-shadow(0 ${3 * z}px ${3 * z}px var(--fx-sticky-shadow)) drop-shadow(0 0 ${0.5 * z}px var(--fx-sticky-edge))`;
           shadows.push(shadow);
           continue;
         }
@@ -78,10 +80,12 @@ export function SectionLayer({ api }: { api: ExcalidrawImperativeAPI }) {
         rect.setAttribute("width", String(Math.max(0, el.width * z)));
         rect.setAttribute("height", String(Math.max(0, el.height * z)));
         rect.setAttribute("rx", String(Math.min(6 * z, 10)));
-        rect.setAttribute("fill", el.backgroundColor === "transparent" ? "none" : el.backgroundColor);
+        // Same colors as the canvas uses (darker versions in dark mode).
+        const ink = isDarkBoard() ? darkColor : (c: string) => c;
+        rect.setAttribute("fill", el.backgroundColor === "transparent" ? "none" : ink(el.backgroundColor));
         rect.setAttribute(
           "stroke",
-          el.strokeColor === "transparent" ? "none" : el.customData?.section ? el.strokeColor : SECTION_STROKE,
+          el.strokeColor === "transparent" ? "none" : ink(el.customData?.section ? el.strokeColor : SECTION_STROKE),
         );
         rect.setAttribute("stroke-width", String(Math.min(2, Math.max(1, 2 * z))));
         rects.push(rect);

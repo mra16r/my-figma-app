@@ -47,6 +47,8 @@ import { getToolStyles, useToolStyles } from "./toolStyles";
 import { Tooltips } from "./Tooltips";
 import { TopRightBar, type SaveStatus } from "./TopRightBar";
 import { ZoomControls, zoomBy, zoomTo, zoomToFit } from "./ZoomControls";
+import { setThemeChoice, THEME_CHOICES, useTheme } from "../../theme";
+import { setInkLookup } from "./darkInk";
 import "./board.css";
 
 export type BoardInfo = { id: string; name: string; parentId: string | null; modifiedTime: string };
@@ -122,6 +124,7 @@ export default function BoardView({ board, location, hasThumbnail, content, imag
   const [renameSignal, setRenameSignal] = useState(0);
   const [imagesLeft, setImagesLeft] = useState(0);
   const [showHelp, setShowHelp] = useState(false);
+  const { choice: themeChoice, theme } = useTheme();
 
   // ---- Pages ----
   const [pages, setPages] = useState<PageMeta[]>(() => content.pages.map(({ id, name }) => ({ id, name })));
@@ -571,6 +574,20 @@ export default function BoardView({ board, location, hasThumbnail, content, imag
     },
     { separator: true },
     {
+      label: "Preferences",
+      submenu: [
+        {
+          label: "Theme",
+          submenu: THEME_CHOICES.map((c) => ({
+            label: c.label,
+            checked: themeChoice === c.value,
+            onSelect: () => setThemeChoice(c.value),
+          })),
+        },
+      ],
+    },
+    { separator: true },
+    {
       label: "Help and account",
       submenu: [
         { label: "Keyboard shortcuts", shortcut: "?", onSelect: () => setShowHelp(true) },
@@ -664,6 +681,22 @@ export default function BoardView({ board, location, hasThumbnail, content, imag
   useDotGrid(api, pageEl);
   useAutoStyles(api);
 
+  // Dark mode colors: text needs to know whether its shape is a sticky note.
+  useEffect(() => {
+    if (!api) return;
+    let seen: readonly ExcalidrawElement[] | null = null;
+    let byId = new Map<string, ExcalidrawElement>();
+    setInkLookup((id) => {
+      const all = api.getSceneElements();
+      if (all !== seen) {
+        seen = all;
+        byId = new Map(all.map((el) => [el.id, el]));
+      }
+      return byId.get(id);
+    });
+    return () => setInkLookup(null);
+  }, [api]);
+
   // Local testing only (left out of the live build): lets test scripts drive the canvas.
   useEffect(() => {
     if (import.meta.env.DEV && api) (window as unknown as { __board?: unknown }).__board = api;
@@ -677,7 +710,7 @@ export default function BoardView({ board, location, hasThumbnail, content, imag
         excalidrawAPI={setApi}
         onChange={onChange}
         name={name}
-        theme="light"
+        theme={theme}
         handleKeyboardGlobally
         UIOptions={{ canvasActions: { toggleTheme: false } }}
       />

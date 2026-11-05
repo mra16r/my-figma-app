@@ -7,6 +7,7 @@
 // instead of its plain textarea, so sizes show while typing.
 
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
+import { inkElement } from "./darkInk";
 
 type TextEl = ExcalidrawElement & {
   type: "text";
@@ -144,9 +145,11 @@ class RichTextEditor extends HTMLElement {
   private undoStack: Snapshot[] = [];
   private redoStack: Snapshot[] = [];
   private listening = false;
+  private inkSource: TextEl | null = null;
 
   setup(element: TextEl) {
     this.textId = element.id;
+    this.inkSource = element;
     this.base = element.fontSize;
     const stored = sizesOf(element);
     this.paras = (element.originalText ?? "").split("\n");
@@ -167,8 +170,18 @@ class RichTextEditor extends HTMLElement {
       this.addEventListener("copy", this.onCopy);
       this.addEventListener("cut", this.onCopy);
       this.addEventListener("keydown", this.onKeyDown);
+      // Excalidraw sets the text color on this box; in dark mode show the color
+      // it will have on the board instead (board.css uses --mfa-ink).
+      new MutationObserver(() => this.updateInk()).observe(this, { attributes: true, attributeFilter: ["style"] });
     }
+    this.updateInk();
     this.render();
+  }
+
+  private updateInk() {
+    if (!this.inkSource || !this.style.color) return;
+    const ink = inkElement({ ...this.inkSource, strokeColor: this.style.color }).strokeColor;
+    if (this.style.getPropertyValue("--mfa-ink") !== ink) this.style.setProperty("--mfa-ink", ink);
   }
 
   disconnectedCallback() {

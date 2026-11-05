@@ -17,21 +17,20 @@
   color: var(--text);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #121214;
-    --panel: #1c1c20;
-    --text: #ececf1;
-    --muted: #9a9aa6;
-    --border: #2e2e35;
-    --hover: #26262c;
-    --accent-soft: #2a2950;
-    --warn-bg: #3a2513;
-    --warn-text: #fdba74;
-    --danger: #fb923c;
-    --preview-bg: #24242a;
-    --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 4px 16px rgb(0 0 0 / 30%);
-  }
+/* Dark theme: chosen in the app (src/theme.ts sets data-theme on <html>). */
+:root[data-theme="dark"] {
+  --bg: #121214;
+  --panel: #1c1c20;
+  --text: #ececf1;
+  --muted: #9a9aa6;
+  --border: #2e2e35;
+  --hover: #26262c;
+  --accent-soft: #2a2950;
+  --warn-bg: #3a2513;
+  --warn-text: #fdba74;
+  --danger: #fb923c;
+  --preview-bg: #24242a;
+  --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 4px 16px rgb(0 0 0 / 30%);
 }
 
 html,
@@ -294,6 +293,41 @@ button.link {
 
 .sidebar-footer .link {
   align-self: flex-start;
+}
+.theme-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  color: var(--muted);
+}
+.theme-switch {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--hover);
+}
+.theme-switch button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.theme-switch button:hover {
+  color: var(--text);
+}
+.theme-switch button[aria-checked="true"] {
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 15%);
 }
 
 .content {
@@ -952,8 +986,13 @@ button.danger-link {
     border-top: 0;
   }
 
-  .sidebar-footer .email {
+  .sidebar-footer .email,
+  .theme-row > span {
     display: none;
+  }
+
+  .theme-row {
+    margin: 0;
   }
 
   .content {

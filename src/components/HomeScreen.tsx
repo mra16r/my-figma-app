@@ -17,7 +17,20 @@ import {
   type Thumb,
 } from "../storage/library";
 import { ConfirmDialog, MoveDialog, NameDialog } from "./Dialogs";
-import { BoardIcon, ChevronIcon, CloudIcon, DotsIcon, FolderIcon, PlusIcon, TrashIcon, WorkspaceIcon } from "./icons";
+import {
+  BoardIcon,
+  ChevronIcon,
+  CloudIcon,
+  DotsIcon,
+  FolderIcon,
+  MonitorIcon,
+  MoonIcon,
+  PlusIcon,
+  SunIcon,
+  TrashIcon,
+  WorkspaceIcon,
+} from "./icons";
+import { setThemeChoice, THEME_CHOICES, useTheme, type ThemeChoice } from "../theme";
 import StorageDialog from "./StorageDialog";
 import TrashView from "./TrashView";
 
@@ -117,6 +130,7 @@ export default function HomeScreen({ library, containerId, section, email, onRef
         </div>
 
         <div className="sidebar-footer">
+          <ThemeSwitch />
           <span className="email" title={email}>
             {email}
           </span>
@@ -387,6 +401,37 @@ function ItemMenu({ items, label }: { items: MenuItem[]; label: string }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+const THEME_ICONS: Record<ThemeChoice, ReactNode> = {
+  light: <SunIcon size={16} />,
+  dark: <MoonIcon size={16} />,
+  system: <MonitorIcon size={16} />,
+};
+
+/** Light, dark, or the computer's setting (same choice as in a board's main menu). */
+function ThemeSwitch() {
+  const { choice } = useTheme();
+  return (
+    <div className="theme-row">
+      <span>Theme</span>
+      <div className="theme-switch" role="radiogroup" aria-label="Theme">
+        {THEME_CHOICES.map((c) => (
+          <button
+            key={c.value}
+            type="button"
+            role="radio"
+            aria-checked={choice === c.value}
+            aria-label={c.label}
+            title={c.label}
+            onClick={() => setThemeChoice(c.value)}
+          >
+            {THEME_ICONS[c.value]}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

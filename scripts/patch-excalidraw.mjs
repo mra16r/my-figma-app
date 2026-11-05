@@ -13,6 +13,11 @@
 //     size, the app lays out such text itself, and the in-place text editor can be
 //     the app's rich editor (which shows each line at its size while typing).
 //     SVG export also keeps bold text bold.
+//  9. Dark mode colors chosen by the app (src/components/board/darkInk.ts) instead
+//     of inverting the whole canvas: shapes, text and pen strokes are drawn with
+//     the colors __mfaInk gives, images aren't re-inverted, and cached shapes
+//     remember which colors they were made with (light, dark or export), so
+//     exports stay light.
 // Each change is an exact text replacement; if Excalidraw changes, this stops
 // with a clear message instead of silently doing nothing. Changes already in
 // place are skipped, so new ones can be added to an installed copy.
@@ -79,6 +84,11 @@ const HANDLES_DEV = (width) =>
 const HANDLES_PROD = (width) =>
   `e.save(),e.lineWidth=${width}/t.zoom.value,o.selectionColor&&(e.strokeStyle=o.selectionColor),i==="rotation"`;
 
+// 9. Dark mode: which colors a cached shape was made with ("x" = for an export).
+const INK_KEY_PROD = '__key=n?.isExporting?"x":globalThis.__mfaInkKey?.()??"",__keys=Xe.__keys||(Xe.__keys=new WeakMap)';
+const INK_KEY_DEV =
+  '__key = renderConfig?.isExporting ? "x" : globalThis.__mfaInkKey?.() ?? "", __keys = _ShapeCache.__keys || (_ShapeCache.__keys = new WeakMap())';
+
 const patches = [
   {
     file: "dist/prod/chunk-K2UTITRG.js",
@@ -117,6 +127,25 @@ const patches = [
         `deprecated:!0,local:!0},[Ie.Inter]:{metrics:{${INTER_METRICS.replace(/ /g, "")}},icon:la,local:!0},[Ie.Cascadia]:`,
       ],
       ['n("Helvetica",...dc),', 'n("Helvetica",...dc),n("Inter",...dc),'],
+      [
+        'P(Xe,"generateElementShape",(t,n)=>{let r=n?.isExporting?void 0:Xe.get(t);',
+        `P(Xe,"generateElementShape",(t,n)=>{let ${INK_KEY_PROD},r=n?.isExporting||__keys.get(t)!==__key?void 0:Xe.get(t);`,
+      ],
+      ["return Xe.cache.set(t,o),o});var he=Xe;", "return Xe.cache.set(t,o),__keys.set(t,__key),o});var he=Xe;"],
+      [
+        "vd=(e,t,{isExporting:n,canvasBackgroundColor:r,embedsValidationStatus:o})=>{switch(e.type){",
+        'vd=(e,t,{isExporting:n,canvasBackgroundColor:r,embedsValidationStatus:o})=>{if(globalThis.__mfaInk&&!n&&e.type!=="freedraw")e=globalThis.__mfaInk(e);switch(e.type){',
+      ],
+      [
+        'ni=(e,t,n,r,o)=>{switch(e.type){case"rectangle":case"iframe":case"embeddable":case"diamond":case"ellipse":{',
+        'ni=(e,t,n,r,o)=>{let __ink=globalThis.__mfaInk&&!r?.isExporting?globalThis.__mfaInk(e).strokeColor:e.strokeColor;switch(e.type){case"rectangle":case"iframe":case"embeddable":case"diamond":case"ellipse":{',
+      ],
+      [
+        'case"freedraw":{n.save(),n.fillStyle=e.strokeColor;let i=Bm(e),a=he.get(e);a&&t.draw(a),n.fillStyle=e.strokeColor',
+        'case"freedraw":{n.save(),n.fillStyle=__ink;let i=Bm(e),a=he.get(e);a&&t.draw(a),n.fillStyle=__ink',
+      ],
+      ["n.font=Ee(e),n.fillStyle=e.strokeColor,n.textAlign=e.textAlign", "n.font=Ee(e),n.fillStyle=__ink,n.textAlign=e.textAlign"],
+      ["A1=(e,t,n)=>n.theme===ke.DARK&&", "A1=(e,t,n)=>!globalThis.__mfaInk&&n.theme===ke.DARK&&"],
     ],
   },
   {
@@ -184,6 +213,34 @@ const patches = [
       [
         '    init("Helvetica", ...HelveticaFontFaces);\n',
         '    init("Helvetica", ...HelveticaFontFaces);\n    init("Inter", ...HelveticaFontFaces);\n',
+      ],
+      [
+        '__publicField(_ShapeCache, "generateElementShape", (element, renderConfig) => {\n  const cachedShape = renderConfig?.isExporting ? void 0 : _ShapeCache.get(element);',
+        `__publicField(_ShapeCache, "generateElementShape", (element, renderConfig) => {\n  const ${INK_KEY_DEV};\n  const cachedShape = renderConfig?.isExporting || __keys.get(element) !== __key ? void 0 : _ShapeCache.get(element);`,
+      ],
+      [
+        "  _ShapeCache.cache.set(element, shape);\n  return shape;\n});\nvar ShapeCache = _ShapeCache;",
+        "  _ShapeCache.cache.set(element, shape);\n  __keys.set(element, __key);\n  return shape;\n});\nvar ShapeCache = _ShapeCache;",
+      ],
+      [
+        "var _generateElementShape = (element, generator, {\n  isExporting,\n  canvasBackgroundColor,\n  embedsValidationStatus\n}) => {\n",
+        'var _generateElementShape = (element, generator, {\n  isExporting,\n  canvasBackgroundColor,\n  embedsValidationStatus\n}) => {\n  if (globalThis.__mfaInk && !isExporting && element.type !== "freedraw") element = globalThis.__mfaInk(element);\n',
+      ],
+      [
+        "var drawElementOnCanvas = (element, rc, context, renderConfig, appState) => {\n",
+        "var drawElementOnCanvas = (element, rc, context, renderConfig, appState) => {\n  const __ink = globalThis.__mfaInk && !renderConfig?.isExporting ? globalThis.__mfaInk(element).strokeColor : element.strokeColor;\n",
+      ],
+      [
+        "      context.save();\n      context.fillStyle = element.strokeColor;\n      const path = getFreeDrawPath2D(element);\n      const fillShape = ShapeCache.get(element);\n      if (fillShape) {\n        rc.draw(fillShape);\n      }\n      context.fillStyle = element.strokeColor;",
+        "      context.save();\n      context.fillStyle = __ink;\n      const path = getFreeDrawPath2D(element);\n      const fillShape = ShapeCache.get(element);\n      if (fillShape) {\n        rc.draw(fillShape);\n      }\n      context.fillStyle = __ink;",
+      ],
+      [
+        "        context.font = getFontString(element);\n        context.fillStyle = element.strokeColor;",
+        "        context.font = getFontString(element);\n        context.fillStyle = __ink;",
+      ],
+      [
+        "  return appState.theme === THEME.DARK && isInitializedImageElement(element)",
+        "  return !globalThis.__mfaInk && appState.theme === THEME.DARK && isInitializedImageElement(element)",
       ],
     ],
   },
