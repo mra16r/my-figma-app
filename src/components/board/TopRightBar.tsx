@@ -1,4 +1,5 @@
 import { Menu, useMenu } from "./Menu";
+import { ChevronDown } from "./icons";
 
 export type SaveStatus = "saved" | "unsaved" | "saving" | "expired" | "error";
 
@@ -37,20 +38,24 @@ export function TopRightBar({ status, errorText, imagesLeft, email, onReconnect,
       )}
       <button
         type="button"
-        className="fx-avatar"
+        className="fx-account"
         aria-label="Account"
+        data-tip={email}
         data-open={!!menu.anchor || undefined}
         onMouseDown={(e) => e.preventDefault()}
         onClick={(e) => menu.toggle(e.currentTarget)}
       >
-        {(email[0] ?? "?").toUpperCase()}
+        <span className="fx-avatar">{(email[0] ?? "?").toUpperCase()}</span>
+        <span className="fx-avatar-caret">
+          <ChevronDown />
+        </span>
       </button>
       {menu.anchor && (
         <Menu
           anchor={menu.anchor}
           align="end"
           onClose={menu.close}
-          entries={[{ heading: email }, { label: "Sign out", onSelect: onSignOut }]}
+          entries={[{ heading: email }, { separator: true }, { label: "Sign out", onSelect: onSignOut }]}
         />
       )}
     </div>

@@ -1,42 +1,46 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import { Menu, useMenu } from "./Menu";
-import { ColorPopover, FILL_TABS, fillMode, withFillMode } from "./Palette";
+import { useMenu } from "./Menu";
+import { ColorPopover, FILL_TABS, MARKER_COLORS, STICKY_COLORS, fillMode, strokeForFill, withFillMode, type Swatch } from "./Palette";
 import {
   ArrowTool,
-  ChevronDown,
+  Caret,
   CurvedTool,
   DiamondTool,
   ElbowTool,
   EllipseTool,
-  EraserTool,
+  EraserMini,
   HandTool,
   ImageTool,
   LineTool,
+  MarkerArt,
+  MarkerMini,
   MoveTool,
-  PenTool,
   RoundedShape,
   SectionTool,
-  ShapesTool,
+  ShapesArt,
   SquareShape,
-  StickyTool,
+  StickyArt,
   TextTool,
+  ThickLine,
+  ThinLine,
   TriangleDownShape,
   TriangleShape,
 } from "./icons";
 import { activeShape, CONNECTORS, isConnector, selectShape, SHAPE_LABELS, SHAPES, type ShapeKind } from "./shapes";
+import { applyToolStyle, MARKER_THICK, MARKER_THIN, setToolStyles, useToolStyles } from "./toolStyles";
 
 export type ToolId = "selection" | "hand" | "freedraw" | "eraser" | "sticky" | "shapes" | "text" | "frame" | "image";
 
-type Tool = { id: ToolId; label: string; shortcut?: string; icon: ReactNode };
+type Tool = { id: ToolId; label: string; shortcut?: string; icon?: ReactNode };
 
 export const TOOLS: Record<ToolId, Tool> = {
-  selection: { id: "selection", label: "Move", shortcut: "V", icon: <MoveTool /> },
-  hand: { id: "hand", label: "Hand", shortcut: "H", icon: <HandTool /> },
-  freedraw: { id: "freedraw", label: "Marker", shortcut: "P", icon: <PenTool /> },
-  eraser: { id: "eraser", label: "Eraser", shortcut: "E", icon: <EraserTool /> },
-  sticky: { id: "sticky", label: "Sticky note", shortcut: "S", icon: <StickyTool size={30} /> },
-  shapes: { id: "shapes", label: "Shapes and connectors", shortcut: "R", icon: <ShapesTool /> },
+  selection: { id: "selection", label: "Select", shortcut: "V", icon: <MoveTool /> },
+  hand: { id: "hand", label: "Hand tool", shortcut: "H", icon: <HandTool /> },
+  freedraw: { id: "freedraw", label: "Marker", shortcut: "P" },
+  eraser: { id: "eraser", label: "Eraser", shortcut: "E" },
+  sticky: { id: "sticky", label: "Sticky note", shortcut: "S" },
+  shapes: { id: "shapes", label: "Shapes and connectors", shortcut: "R" },
   text: { id: "text", label: "Text", shortcut: "T", icon: <TextTool /> },
   frame: { id: "frame", label: "Section", shortcut: "Shift+S", icon: <SectionTool /> },
   image: { id: "image", label: "Place image", icon: <ImageTool /> },
@@ -63,18 +67,12 @@ const SHAPE_KEYS: Partial<Record<ShapeKind, string>> = {
   diamond: "D",
 };
 
-/** Tool groups, separated by dividers; inner arrays share one button with a flyout. */
-const LAYOUT: (ToolId | ToolId[])[][] = [
-  ["selection", "hand"],
-  [["freedraw", "eraser"], "sticky", "shapes"],
-  ["text", "frame", "image"],
-];
-
 /** Selects a tool from the bottom toolbar (shapes: the last shape used). */
 export function selectTool(api: ExcalidrawImperativeAPI, id: ToolId, lastShape: ShapeKind = "square"): void {
   if (id === "sticky") api.setActiveTool({ type: "custom", customType: "sticky" });
   else if (id === "shapes") selectShape(api, lastShape);
   else api.setActiveTool({ type: id });
+  applyToolStyle(api);
 }
 
 /** The tool currently active in the canvas, in toolbar terms. */
@@ -89,6 +87,7 @@ export function Toolbar({ api }: { api: ExcalidrawImperativeAPI }) {
   const [active, setActive] = useState<ToolId>(() => activeToolId(api));
   const [shape, setShape] = useState<ShapeKind | null>(() => activeShape(api));
   const [lastShape, setLastShape] = useState<ShapeKind>("square");
+  const styles = useToolStyles();
 
   useEffect(() => {
     const sync = () => {
@@ -97,6 +96,7 @@ export function Toolbar({ api }: { api: ExcalidrawImperativeAPI }) {
       setActive((cur) => (cur === tool ? cur : tool));
       setShape((cur) => (cur === s ? cur : s));
       if (s) setLastShape(s);
+      applyToolStyle(api); // also when a tool was picked with a keyboard shortcut
     };
     sync();
     return api.onChange(sync);
@@ -107,27 +107,213 @@ export function Toolbar({ api }: { api: ExcalidrawImperativeAPI }) {
     setActive(id);
   };
 
+  const marker = active === "freedraw" || active === "eraser";
   return (
     <div className="fx-toolbar-stack">
+      {marker && <MarkerTray api={api} eraser={active === "eraser"} />}
+      {active === "sticky" && <StickyTray />}
       {active === "shapes" && <ShapeTray api={api} current={shape} />}
       <div className="fx-panel fx-toolbar" role="toolbar" aria-label="Tools">
-        {LAYOUT.map((section, s) => (
-          <div key={s} className="fx-toolbar-section">
-            {section.map((item) =>
-              Array.isArray(item) ? (
-                <ToolGroup key={item.join()} ids={item} active={active} onChoose={choose} />
-              ) : (
-                <ToolButton
-                  key={item}
-                  tool={item === "shapes" ? { ...TOOLS.shapes, icon: <ShapesTool /> } : TOOLS[item]}
-                  active={active === item}
-                  onClick={() => choose(item)}
-                />
-              ),
-            )}
-          </div>
-        ))}
+        <ToolButton tool={TOOLS.selection} active={active === "selection"} onClick={() => choose("selection")} />
+        <ToolButton tool={TOOLS.hand} active={active === "hand"} onClick={() => choose("hand")} />
+        <span className="fx-divider" />
+        <CreateButton
+          kind="marker"
+          tool={TOOLS.freedraw}
+          active={marker}
+          onClick={() => choose(active === "eraser" ? "eraser" : "freedraw")}
+          art={<MarkerArt color={styles.markerColor} />}
+        />
+        <CreateButton kind="sticky" tool={TOOLS.sticky} active={active === "sticky"} onClick={() => choose("sticky")} art={<StickyArt color={styles.stickyColor} />} />
+        <CreateButton
+          kind="shapes"
+          tool={TOOLS.shapes}
+          active={active === "shapes"}
+          onClick={() => choose("shapes")}
+          art={
+            <ShapesArt
+              fill={styles.shapeFill === "transparent" ? "#fff" : styles.shapeFill}
+              stroke={strokeForFill(styles.shapeFill) ?? "#757575"}
+            />
+          }
+        />
+        <span className="fx-divider" />
+        <ToolButton tool={TOOLS.text} active={active === "text"} onClick={() => choose("text")} />
+        <ToolButton tool={TOOLS.frame} active={active === "frame"} onClick={() => choose("frame")} />
+        <ToolButton tool={TOOLS.image} active={active === "image"} onClick={() => choose("image")} />
       </div>
+    </div>
+  );
+}
+
+const tipFor = (tool: Tool) => (tool.shortcut ? `${tool.label}  ${tool.shortcut}` : tool.label);
+
+function ToolButton({ tool, active, onClick }: { tool: Tool; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="fx-tool"
+      data-tool={tool.id}
+      data-active={active || undefined}
+      data-tip={tipFor(tool)}
+      aria-label={tool.label}
+      aria-pressed={active}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onClick}
+    >
+      {tool.icon}
+    </button>
+  );
+}
+
+/** The marker, sticky notes and shapes: pictures that rise when picked. */
+function CreateButton({
+  kind,
+  tool,
+  active,
+  onClick,
+  art,
+}: {
+  kind: "marker" | "sticky" | "shapes";
+  tool: Tool;
+  active: boolean;
+  onClick: () => void;
+  art: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className="fx-create"
+      data-kind={kind}
+      data-active={active || undefined}
+      data-tip={tipFor(tool)}
+      aria-label={tool.label}
+      aria-pressed={active}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onClick}
+    >
+      <span className="fx-create-art">{art}</span>
+    </button>
+  );
+}
+
+// ---- Trays (the row above the toolbar while a drawing tool is picked) ----
+
+function ColorDots({ colors, value, onPick, label }: { colors: Swatch[]; value: string; onPick: (c: string) => void; label: string }) {
+  return (
+    <div className="fx-tray-colors" role="radiogroup" aria-label={label}>
+      {colors.map((c) => (
+        <button
+          key={c.value}
+          type="button"
+          role="radio"
+          aria-checked={c.value.toLowerCase() === value.toLowerCase()}
+          className="fx-tray-dot"
+          data-selected={c.value.toLowerCase() === value.toLowerCase() || undefined}
+          data-tip={c.name}
+          aria-label={c.name}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => onPick(c.value)}
+        >
+          <span style={{ ["--c" as string]: c.value }} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function MarkerTray({ api, eraser }: { api: ExcalidrawImperativeAPI; eraser: boolean }) {
+  const styles = useToolStyles();
+  const custom = useRef<HTMLInputElement>(null);
+  const pickColor = (c: string) => {
+    setToolStyles({ markerColor: c });
+    if (eraser) api.setActiveTool({ type: "freedraw" });
+    applyToolStyle(api);
+  };
+  const pickWidth = (w: number) => {
+    setToolStyles({ markerWidth: w });
+    if (eraser) api.setActiveTool({ type: "freedraw" });
+    applyToolStyle(api);
+  };
+  const known = MARKER_COLORS.some((c) => c.value.toLowerCase() === styles.markerColor.toLowerCase());
+  return (
+    <div className="fx-panel fx-tray" role="toolbar" aria-label="Marker">
+      <button
+        type="button"
+        className="fx-tray-pick"
+        data-active={!eraser || undefined}
+        data-tip="Marker  P"
+        aria-label="Marker"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => api.setActiveTool({ type: "freedraw" })}
+      >
+        <MarkerMini color={styles.markerColor} />
+      </button>
+      <button
+        type="button"
+        className="fx-tray-pick"
+        data-active={eraser || undefined}
+        data-tip="Eraser  E"
+        aria-label="Eraser"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => api.setActiveTool({ type: "eraser" })}
+      >
+        <EraserMini />
+      </button>
+      <span className="fx-divider" />
+      <button
+        type="button"
+        className="fx-tray-pick"
+        data-active={styles.markerWidth === MARKER_THIN || undefined}
+        data-tip="Thin"
+        aria-label="Thin"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => pickWidth(MARKER_THIN)}
+      >
+        <ThinLine />
+      </button>
+      <button
+        type="button"
+        className="fx-tray-pick"
+        data-active={styles.markerWidth === MARKER_THICK || undefined}
+        data-tip="Thick"
+        aria-label="Thick"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => pickWidth(MARKER_THICK)}
+      >
+        <ThickLine />
+      </button>
+      <span className="fx-divider" />
+      <ColorDots colors={MARKER_COLORS} value={styles.markerColor} onPick={pickColor} label="Marker color" />
+      <button
+        type="button"
+        className="fx-tray-dot"
+        data-selected={!known || undefined}
+        data-tip="Custom"
+        aria-label="Custom color"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => custom.current?.click()}
+      >
+        <span className="fx-color-custom" />
+      </button>
+      <input
+        ref={custom}
+        type="color"
+        className="fx-color-input"
+        value={/^#[0-9a-f]{6}$/i.test(styles.markerColor) ? styles.markerColor : "#000000"}
+        onChange={(e) => pickColor(e.target.value)}
+        tabIndex={-1}
+        aria-hidden
+      />
+    </div>
+  );
+}
+
+function StickyTray() {
+  const styles = useToolStyles();
+  return (
+    <div className="fx-panel fx-tray" role="toolbar" aria-label="Sticky note color">
+      <ColorDots colors={STICKY_COLORS} value={styles.stickyColor} onPick={(c) => setToolStyles({ stickyColor: c })} label="Sticky note color" />
     </div>
   );
 }
@@ -135,59 +321,61 @@ export function Toolbar({ api }: { api: ExcalidrawImperativeAPI }) {
 /** The row above the toolbar while drawing shapes: color, connectors, shapes. */
 function ShapeTray({ api, current }: { api: ExcalidrawImperativeAPI; current: ShapeKind | null }) {
   const menu = useMenu();
+  const styles = useToolStyles();
   const forConnector = current ? isConnector(current) : false;
-  const read = () => {
-    const s = api.getAppState();
-    return forConnector ? s.currentItemStrokeColor : s.currentItemBackgroundColor;
-  };
-  const [color, setColor] = useState(read);
-  useEffect(() => {
-    setColor(read());
-    return api.onChange(() => setColor(read()));
-  }, [api, forConnector]); // eslint-disable-line react-hooks/exhaustive-deps
+  const color = forConnector ? styles.connectorColor : styles.shapeFill;
   const mode = fillMode(color);
-  const setFill = (c: string) => api.updateScene({ appState: { currentItemBackgroundColor: c } });
+  const setFill = (c: string) => {
+    setToolStyles({ shapeFill: c });
+    applyToolStyle(api);
+  };
 
   return (
-    <div className="fx-panel fx-shape-tray" role="toolbar" aria-label="Shapes">
+    <div className="fx-panel fx-tray" role="toolbar" aria-label="Shapes">
       <button
         type="button"
         className="fx-tray-color"
-        data-tip={forConnector ? "Connector color" : "Shape color"}
-        aria-label="Color for new shapes"
+        data-tip={forConnector ? "Connector color" : "Color"}
+        aria-label={forConnector ? "Connector color" : "Color"}
         data-open={!!menu.anchor || undefined}
         onMouseDown={(e) => e.preventDefault()}
         onClick={(e) => menu.toggle(e.currentTarget)}
       >
-        <span className="fx-swatch" data-none={color === "transparent" || undefined} style={{ ["--c" as string]: color }} />
-        <ChevronDown size={10} />
+        <span
+          className="fx-tray-swatch"
+          data-none={color === "transparent" || undefined}
+          style={{ ["--c" as string]: color, ["--s" as string]: forConnector ? color : (strokeForFill(color) ?? "#757575") }}
+        />
+        <Caret />
       </button>
-      <span className="fx-tray-divider" />
-      {[...CONNECTORS, null, ...SHAPES].map((kind, i) =>
-        kind === null ? (
-          <span key={`d${i}`} className="fx-tray-divider" />
-        ) : (
-          <button
-            key={kind}
-            type="button"
-            className="fx-tray-item"
-            data-active={current === kind || undefined}
-            data-tip={SHAPE_KEYS[kind] ? `${SHAPE_LABELS[kind]}  ${SHAPE_KEYS[kind]}` : SHAPE_LABELS[kind]}
-            aria-label={SHAPE_LABELS[kind]}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => selectShape(api, kind)}
-          >
-            {SHAPE_ICONS[kind]}
-          </button>
-        ),
-      )}
+      <span className="fx-divider" />
+      {[...CONNECTORS, ...SHAPES].map((kind) => (
+        <button
+          key={kind}
+          type="button"
+          className="fx-tray-shape"
+          data-active={current === kind || undefined}
+          data-tip={SHAPE_KEYS[kind] ? `${SHAPE_LABELS[kind]}  ${SHAPE_KEYS[kind]}` : SHAPE_LABELS[kind]}
+          aria-label={SHAPE_LABELS[kind]}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            selectShape(api, kind);
+            applyToolStyle(api);
+          }}
+        >
+          {SHAPE_ICONS[kind]}
+        </button>
+      ))}
       {menu.anchor &&
         (forConnector ? (
           <ColorPopover
             anchor={menu.anchor}
             value={color}
             onClose={menu.close}
-            onPick={(c) => api.updateScene({ appState: { currentItemStrokeColor: c } })}
+            onPick={(c) => {
+              setToolStyles({ connectorColor: c });
+              applyToolStyle(api);
+            }}
           />
         ) : (
           <ColorPopover
@@ -200,63 +388,6 @@ function ShapeTray({ api, current }: { api: ExcalidrawImperativeAPI; current: Sh
             onClose={menu.close}
           />
         ))}
-    </div>
-  );
-}
-
-function ToolButton({ tool, active, onClick }: { tool: Tool; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      className="fx-tool"
-      data-tool={tool.id}
-      data-active={active || undefined}
-      data-tip={tool.shortcut ? `${tool.label}  ${tool.shortcut}` : tool.label}
-      aria-label={tool.label}
-      aria-pressed={active}
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={onClick}
-    >
-      {tool.icon}
-    </button>
-  );
-}
-
-function ToolGroup({ ids, active, onChoose }: { ids: ToolId[]; active: ToolId; onChoose: (id: ToolId) => void }) {
-  const [shown, setShown] = useState<ToolId>(ids[0]);
-  const menu = useMenu();
-  const isActive = ids.includes(active);
-
-  useEffect(() => {
-    if (ids.includes(active)) setShown(active);
-  }, [active, ids]);
-
-  return (
-    <div className="fx-tool-group" data-active={isActive || undefined}>
-      <ToolButton tool={TOOLS[shown]} active={isActive} onClick={() => onChoose(shown)} />
-      <button
-        type="button"
-        className="fx-tool-caret"
-        aria-label={`More ${TOOLS[shown].label.toLowerCase()} tools`}
-        data-open={!!menu.anchor || undefined}
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={(e) => menu.toggle(e.currentTarget.parentElement!)}
-      >
-        <ChevronDown size={10} />
-      </button>
-      {menu.anchor && (
-        <Menu
-          anchor={menu.anchor}
-          side="above"
-          onClose={menu.close}
-          entries={ids.map((id) => ({
-            label: TOOLS[id].label,
-            shortcut: TOOLS[id].shortcut,
-            checked: id === shown,
-            onSelect: () => onChoose(id),
-          }))}
-        />
-      )}
     </div>
   );
 }

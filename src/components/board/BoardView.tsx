@@ -40,11 +40,13 @@ import { CanvasOverlay, STICKY_SIZE, useArrowCursor, useDotGrid } from "./Canvas
 import { SectionLayer, withSectionBackgrounds } from "./SectionLayer";
 import { FilePanel, type PageMeta } from "./FilePanel";
 import type { MenuEntry } from "./Menu";
-import { SelectionToolbar, STICKY_COLORS } from "./SelectionToolbar";
+import { SelectionToolbar } from "./SelectionToolbar";
 import { makeTriangle, selectShape } from "./shapes";
 import { selectTool, Toolbar } from "./Toolbar";
+import { getToolStyles, useToolStyles } from "./toolStyles";
+import { Tooltips } from "./Tooltips";
 import { TopRightBar, type SaveStatus } from "./TopRightBar";
-import { ZoomControls, zoomTo, zoomToFit } from "./ZoomControls";
+import { ZoomControls, zoomBy, zoomTo, zoomToFit } from "./ZoomControls";
 import "./board.css";
 
 export type BoardInfo = { id: string; name: string; parentId: string | null; modifiedTime: string };
@@ -67,11 +69,11 @@ const DEFAULT_STYLE: Partial<AppState> = {
   viewBackgroundColor: "transparent", // the dot grid shows through
   currentItemRoughness: 0,
   currentItemFontFamily: FONT_FAMILY["Liberation Sans"],
-  currentItemFontSize: 20,
+  currentItemFontSize: 16,
   currentItemStrokeColor: "#1e1e1e",
   currentItemBackgroundColor: "#ffffff", // filled, so a click anywhere inside selects it
   currentItemFillStyle: "solid",
-  currentItemStrokeWidth: 2,
+  currentItemStrokeWidth: 4,
   currentItemRoundness: "round",
   currentItemArrowType: "elbow",
   // Sections: names as pills (styled in CSS), fill and outline drawn by SectionLayer, no clipping.
@@ -93,6 +95,12 @@ function usedImageIds(pages: Iterable<readonly ExcalidrawElement[]>): Set<string
     for (const el of elements) if (el.type === "image" && !el.isDeleted && el.fileId) ids.add(el.fileId);
   return ids;
 }
+
+/** Runs one of Excalidraw's keyboard actions (they handle bindings, order…). */
+function press(init: KeyboardEventInit) {
+  document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }));
+}
+const CTRL = { ctrlKey: true, metaKey: true };
 
 function download(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -516,22 +524,64 @@ export default function BoardView({ board, location, hasThumbnail, content, imag
     }
   };
 
-  const mainMenu: MenuEntry[] = [
-    { label: "Back to files", onSelect: goBack },
-    { separator: true },
-    { label: "Rename board", onSelect: () => setRenameSignal((n) => n + 1) },
+  const fileMenu: MenuEntry[] = [
+    { label: "Rename", onSelect: () => setRenameSignal((n) => n + 1) },
     { label: "Add page", onSelect: addPage },
     { separator: true },
     { label: "Export page as PNG", onSelect: () => void exportPage("png") },
     { label: "Export page as SVG", onSelect: () => void exportPage("svg") },
+  ];
+
+  const mainMenu: MenuEntry[] = [
+    { label: "Back to files", onSelect: goBack },
     { separator: true },
-    { label: "Keyboard shortcuts", shortcut: "?", onSelect: () => setShowHelp(true) },
+    { label: "File", submenu: fileMenu },
+    {
+      label: "Edit",
+      submenu: [
+        { label: "Undo", shortcut: "Ctrl+Z", onSelect: () => press({ key: "z", code: "KeyZ", ...CTRL }) },
+        { label: "Redo", shortcut: "Ctrl+Shift+Z", onSelect: () => press({ key: "Z", code: "KeyZ", shiftKey: true, ...CTRL }) },
+        { separator: true },
+        { label: "Duplicate", shortcut: "Ctrl+D", onSelect: () => press({ key: "d", code: "KeyD", ...CTRL }) },
+        { label: "Delete", shortcut: "Del", onSelect: () => press({ key: "Delete", code: "Delete" }) },
+        { separator: true },
+        { label: "Select all", shortcut: "Ctrl+A", onSelect: () => press({ key: "a", code: "KeyA", ...CTRL }) },
+      ],
+    },
+    {
+      label: "View",
+      submenu: [
+        { label: "Zoom in", shortcut: "Ctrl++", onSelect: () => api && zoomBy(api, 1.25) },
+        { label: "Zoom out", shortcut: "Ctrl+−", onSelect: () => api && zoomBy(api, 1 / 1.25) },
+        { separator: true },
+        { label: "Zoom to fit", shortcut: "Shift+1", onSelect: () => api && zoomToFit(api) },
+        { label: "Zoom to 50%", onSelect: () => api && zoomTo(api, 0.5) },
+        { label: "Zoom to 100%", shortcut: "Shift+0", onSelect: () => api && zoomTo(api, 1) },
+        { label: "Zoom to 200%", onSelect: () => api && zoomTo(api, 2) },
+      ],
+    },
+    {
+      label: "Arrange",
+      submenu: [
+        { label: "Bring to front", shortcut: "Ctrl+Shift+]", onSelect: () => press({ key: "]", code: "BracketRight", shiftKey: true, ...CTRL }) },
+        { label: "Bring forward", shortcut: "Ctrl+]", onSelect: () => press({ key: "]", code: "BracketRight", ...CTRL }) },
+        { label: "Send backward", shortcut: "Ctrl+[", onSelect: () => press({ key: "[", code: "BracketLeft", ...CTRL }) },
+        { label: "Send to back", shortcut: "Ctrl+Shift+[", onSelect: () => press({ key: "[", code: "BracketLeft", shiftKey: true, ...CTRL }) },
+      ],
+    },
     { separator: true },
-    { label: "Sign out", onSelect: signOut },
+    {
+      label: "Help and account",
+      submenu: [
+        { label: "Keyboard shortcuts", shortcut: "?", onSelect: () => setShowHelp(true) },
+        { separator: true },
+        { label: "Sign out", onSelect: signOut },
+      ],
+    },
   ];
 
   // ---- Sticky notes ----
-  const stickyColor = STICKY_COLORS[0].value;
+  const { stickyColor } = useToolStyles();
   useEffect(() => {
     if (!api || !pageEl) return;
     return api.onPointerDown((tool, state) => {
@@ -544,13 +594,14 @@ export default function BoardView({ board, location, hasThumbnail, content, imag
           y: y - STICKY_SIZE / 2,
           width: STICKY_SIZE,
           height: STICKY_SIZE,
-          backgroundColor: stickyColor,
+          backgroundColor: getToolStyles().stickyColor,
           fillStyle: "solid",
           strokeColor: "transparent",
           strokeWidth: 1,
           roughness: 0,
           roundness: null,
-          customData: { kind: "sticky" },
+          // topLeft: its text sits at the top left, like FigJam (see autoStyle).
+          customData: { kind: "sticky", topLeft: true },
         },
       ]);
       api.updateScene({
@@ -562,7 +613,7 @@ export default function BoardView({ board, location, hasThumbnail, content, imag
       // Start typing right away, like a real sticky note.
       setTimeout(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })), 30);
     });
-  }, [api, pageEl, stickyColor]);
+  }, [api, pageEl]);
 
   // ---- Triangles (drag to size, or click for a default one) ----
   useEffect(() => {
@@ -641,6 +692,7 @@ export default function BoardView({ board, location, hasThumbnail, content, imag
               pages={pages}
               currentPageId={currentPage}
               mainMenu={mainMenu}
+              fileMenu={fileMenu}
               renameBoardSignal={renameSignal}
               onRenameBoard={(n) => void renameBoard(n)}
               onSelectPage={switchPage}
@@ -664,6 +716,7 @@ export default function BoardView({ board, location, hasThumbnail, content, imag
           </div>
           <ZoomControls api={api} onHelp={() => setShowHelp(true)} />
           <SelectionToolbar api={api} />
+          <Tooltips />
           {showHelp && <ShortcutsDialog onClose={() => setShowHelp(false)} />}
         </div>
       )}

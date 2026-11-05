@@ -6,6 +6,9 @@ import { SECTION_STROKE } from "./autoStyle";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
+/** A see-through sticky color would let its own shadow show through; use it opaque. */
+const baseFill = (c: string) => (/^#[0-9a-f]{8}$/i.test(c) ? c.slice(0, 7) : c);
+
 /**
  * For exports and previews: section fills are drawn by this app, not by
  * Excalidraw, so add a filled rectangle behind each section.
@@ -47,7 +50,26 @@ export function SectionLayer({ api }: { api: ExcalidrawImperativeAPI }) {
       const s = api.getAppState();
       const z = s.zoom.value;
       const rects: SVGRectElement[] = [];
+      const shadows: SVGRectElement[] = [];
       for (const el of api.getSceneElements()) {
+        // Sticky notes get a soft shadow along their bottom edge, like FigJam.
+        if (el.customData?.kind === "sticky" && el.type === "rectangle" && el.backgroundColor !== "transparent") {
+          const p = sceneCoordsToViewportCoords({ sceneX: el.x, sceneY: el.y }, s);
+          const x = p.x - s.offsetLeft;
+          const y = p.y - s.offsetTop;
+          const w = el.width * z;
+          const h = el.height * z;
+          const shadow = document.createElementNS(SVG_NS, "rect");
+          shadow.setAttribute("x", String(x));
+          shadow.setAttribute("y", String(y));
+          shadow.setAttribute("width", String(Math.max(0, w)));
+          shadow.setAttribute("height", String(Math.max(0, h)));
+          shadow.setAttribute("fill", baseFill(el.backgroundColor));
+          if (el.angle) shadow.setAttribute("transform", `rotate(${(el.angle * 180) / Math.PI} ${x + w / 2} ${y + h / 2})`);
+          shadow.style.filter = `drop-shadow(0 ${3 * z}px ${3 * z}px rgb(0 0 0 / 14%)) drop-shadow(0 0 ${0.5 * z}px rgb(0 0 0 / 12%))`;
+          shadows.push(shadow);
+          continue;
+        }
         if (el.type !== "frame" && el.type !== "magicframe") continue;
         const p = sceneCoordsToViewportCoords({ sceneX: el.x, sceneY: el.y }, s);
         const rect = document.createElementNS(SVG_NS, "rect");
@@ -61,10 +83,10 @@ export function SectionLayer({ api }: { api: ExcalidrawImperativeAPI }) {
           "stroke",
           el.strokeColor === "transparent" ? "none" : el.customData?.section ? el.strokeColor : SECTION_STROKE,
         );
-        rect.setAttribute("stroke-width", "1");
+        rect.setAttribute("stroke-width", String(Math.min(2, Math.max(1, 2 * z))));
         rects.push(rect);
       }
-      svg.replaceChildren(...rects);
+      svg.replaceChildren(...rects, ...shadows);
     };
     const schedule = () => {
       if (!frame) frame = requestAnimationFrame(draw);

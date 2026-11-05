@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import {
   CaptureUpdateAction,
   FONT_FAMILY,
@@ -13,62 +13,58 @@ import { Menu, useMenu, type MenuEntry } from "./Menu";
 import {
   ColorPopover,
   FILL_TABS,
+  LINE_TABS,
   PALETTE,
+  STICKY_COLORS,
   STROKE_TABS,
   baseColor,
   fillMode,
+  strokeForFill,
   withFillMode,
   type StrokeMode,
+  type Swatch,
 } from "./Palette";
 import {
   AlignIcon,
   BoldIcon,
   ChevronDown,
-  DotsIcon,
   FitIcon,
   FontIcon,
+  LineStyleIcon,
   LinkIcon,
   ListIcon,
   LockIcon,
+  ShapeSwitchIcon,
   StrikeIcon,
-  StrokeIcon,
 } from "./icons";
 import { canConvert, convertShapes, SHAPE_LABELS, SHAPES, shapeOf, type ShapeKind } from "./shapes";
 import { SHAPE_ICONS } from "./Toolbar";
 
-export const STICKY_COLORS = [
-  { name: "Yellow", value: "#fff2a6" },
-  { name: "Orange", value: "#ffd9b3" },
-  { name: "Red", value: "#ffc9c9" },
-  { name: "Pink", value: "#ffd1ec" },
-  { name: "Violet", value: "#e2d4ff" },
-  { name: "Blue", value: "#c9e2ff" },
-  { name: "Teal", value: "#c2eee6" },
-  { name: "Green", value: "#cfefc6" },
-  { name: "Gray", value: "#e6e6e6" },
-  { name: "White", value: "#ffffff" },
+const PEN_WIDTHS = [
+  { label: "Thin", value: 1 },
+  { label: "Thick", value: 3 },
 ];
 
-const STROKE_WIDTHS = [
-  { label: "Thin", value: 1 },
-  { label: "Medium", value: 2 },
-  { label: "Thick", value: 4 },
+const LINE_WIDTHS = [
+  { label: "Thin", value: 2 },
+  { label: "Regular", value: 4 },
+  { label: "Thick", value: 8 },
 ];
 
 const FONT_SIZES = [
-  { label: "Small", value: 16 },
-  { label: "Medium", value: 20 },
-  { label: "Large", value: 28 },
-  { label: "Extra large", value: 36 },
+  { label: "Small", value: 16, preview: { fontSize: 12, lineHeight: "16px" } },
+  { label: "Medium", value: 20, preview: { fontSize: 13, lineHeight: "24px" } },
+  { label: "Large", value: 28, preview: { fontSize: 14, lineHeight: "24px" } },
+  { label: "Extra large", value: 36, preview: { fontSize: 16, lineHeight: "24px" } },
 ];
 
 const FONTS = [
-  { label: "Sans", value: FONT_FAMILY["Liberation Sans"], css: "Liberation Sans" },
+  { label: "Simple", value: FONT_FAMILY["Liberation Sans"], css: "Liberation Sans" },
   { label: "Rounded", value: FONT_FAMILY.Nunito, css: "Nunito" },
   { label: "Handwritten", value: FONT_FAMILY.Excalifont, css: "Excalifont" },
   { label: "Comic", value: FONT_FAMILY["Comic Shanns"], css: "Comic Shanns" },
-  { label: "Display", value: FONT_FAMILY["Lilita One"], css: "Lilita One" },
-  { label: "Code", value: FONT_FAMILY.Cascadia, css: "Cascadia" },
+  { label: "Bookish", value: FONT_FAMILY["Lilita One"], css: "Lilita One" },
+  { label: "Technical", value: FONT_FAMILY.Cascadia, css: "Cascadia" },
 ];
 
 /** Text is measured when it changes, so the font has to be loaded first. */
@@ -123,7 +119,7 @@ function labelArea(c: ExcalidrawElement) {
   return { x: c.x + ox, y: c.y + oy, maxW, maxH, k };
 }
 
-/** Grows the shape if its text no longer fits, then centers the text again. */
+/** Grows the shape if its text no longer fits, then places the text again. */
 function placeLabel(text: TextLike, container: ExcalidrawElement): { text: Patch; container?: Patch } {
   let c = container;
   let area = labelArea(c);
@@ -187,7 +183,7 @@ function update(
       if (t.type !== "text") continue;
       const { width, height, text: wrapped } = t as TextLike & { text: string };
       const patch: Patch = { width, height, text: wrapped };
-      // …and put labels back in the middle of their shape (growing it if needed).
+      // …and put labels back in place inside their shape (growing it if needed).
       const container = t.containerId ? byId.get(t.containerId) : undefined;
       if (container) {
         const placed = placeLabel(t as TextLike, container);
@@ -204,15 +200,17 @@ function update(
   api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
 }
 
-/** Runs one of Excalidraw's keyboard actions (they handle bindings, order…). */
-function press(init: KeyboardEventInit) {
-  document.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }));
-}
+const GAP = 36; // between the selection and the toolbar
+const HEIGHT = 40;
+const EDGE = 8;
+const SECTION_PILL = 34; // the name pill above a section
 
 export function SelectionToolbar({ api }: { api: ExcalidrawImperativeAPI }) {
   const [, rerender] = useReducer((n: number) => n + 1, 0);
   const lastKey = useRef("");
   const dragging = useRef(false);
+  const bar = useRef<HTMLDivElement>(null);
+  const centerX = useRef(0);
 
   useEffect(() => {
     const check = () => {
@@ -247,6 +245,14 @@ export function SelectionToolbar({ api }: { api: ExcalidrawImperativeAPI }) {
     return () => offs.forEach((off) => off());
   }, [api]);
 
+  // Keep the bar on screen once its width is known.
+  useLayoutEffect(() => {
+    const el = bar.current;
+    if (!el) return;
+    const w = el.offsetWidth;
+    el.style.left = `${Math.max(EDGE, Math.min(centerX.current - w / 2, window.innerWidth - w - EDGE))}px`;
+  });
+
   if (!lastKey.current) return null;
 
   const s = api.getAppState();
@@ -260,83 +266,84 @@ export function SelectionToolbar({ api }: { api: ExcalidrawImperativeAPI }) {
   const [x1, y1, x2, y2] = getCommonBounds([...selected, ...labels]);
   const top = sceneCoordsToViewportCoords({ sceneX: (x1 + x2) / 2, sceneY: y1 }, s);
   const bottom = sceneCoordsToViewportCoords({ sceneX: (x1 + x2) / 2, sceneY: y2 }, s);
-  // Sections have their name pill above them; keep the toolbar clear of it.
-  const lift = selected.some((el) => kindOf(el) === "section") ? 30 : 0;
-  const above = top.y - 60 - lift > 64;
-  const style = {
-    left: Math.min(Math.max(top.x, 200), window.innerWidth - 200),
-    top: above ? top.y - 56 - lift : Math.min(bottom.y + 16, window.innerHeight - 140),
-  };
+  // Like FigJam: above the selection, or under it when there's no room above.
+  const lift = selected.some((el) => kindOf(el) === "section") ? SECTION_PILL : 0;
+  const belowTop = bottom.y + GAP;
+  const aboveTop = top.y - lift - GAP - HEIGHT;
+  const roomBelow = belowTop + HEIGHT <= window.innerHeight - 72;
+  const roomAbove = aboveTop >= 68;
+  const below = !roomAbove && roomBelow;
+  const barTop = below ? belowTop : Math.max(aboveTop, 68);
+  centerX.current = top.x;
+  const side = below ? "below" : "above";
 
   const first = selected[0];
   const text = (selected.find((el) => el.type === "text") ?? labels[0]) as TextLike | undefined;
-  const shapes = only("shape");
-  const groups: ReactNode[] = [];
+  const groups: ReactNode[][] = [];
 
-  if (shapes) {
+  if (only("shape")) {
     const current = shapeOf(first)!;
-    groups.push(
+    groups.push([
       <ShapeSwitch
         key="shape"
+        side={side}
         current={current}
         allowed={(k) => selected.every((el) => canConvert(el, k))}
         onPick={(k) => convertShapes(api, k)}
       />,
-      <span key="d1" className="fx-st-divider" />,
-      <FillButton key="fill" value={first.backgroundColor} onChange={(c) => update(api, () => ({ backgroundColor: c, fillStyle: "solid" }))} />,
-      <StrokeButton
-        key="stroke"
-        color={first.strokeColor}
-        style={first.strokeStyle}
-        onChange={(p) => update(api, () => p)}
+    ]);
+    groups.push([
+      <FillButton
+        key="fill"
+        side={side}
+        value={first.backgroundColor}
+        onChange={(c) =>
+          update(api, (el) => {
+            const stroke = el.strokeColor !== "transparent" && strokeForFill(c === "transparent" ? "#ffffff" : c);
+            return { backgroundColor: c, fillStyle: "solid", ...(stroke ? { strokeColor: stroke } : {}) };
+          })
+        }
       />,
-    );
+      <StrokeButton key="stroke" side={side} color={first.strokeColor} style={first.strokeStyle} onChange={(p) => update(api, () => p)} />,
+    ]);
   } else if (only("section")) {
-    groups.push(
-      <FillButton key="fill" value={first.backgroundColor} onChange={(c) => update(api, () => ({ backgroundColor: c }))} />,
-      <StrokeButton key="stroke" color={first.strokeColor} style="solid" onChange={(p) => update(api, () => p)} />,
-      <span key="d1" className="fx-st-divider" />,
-      <button
-        key="fit"
-        type="button"
-        className="fx-st-btn"
-        data-tip="Resize to fit contents"
-        aria-label="Resize to fit contents"
-        onClick={() => fitSections(api, selected)}
-      >
-        <FitIcon />
-      </button>,
-      <button
+    groups.push([
+      <FillButton key="fill" side={side} value={first.backgroundColor} onChange={(c) => update(api, () => ({ backgroundColor: c }))} />,
+      <StrokeButton key="stroke" side={side} color={first.strokeColor} style="solid" onChange={(p) => update(api, () => p)} />,
+    ]);
+    groups.push([
+      <IconButton key="fit" label="Resize to fit contents" icon={<FitIcon />} onClick={() => fitSections(api, selected)} />,
+      <Toggle
         key="lock"
-        type="button"
-        className="fx-st-btn"
-        data-on={first.locked || undefined}
-        data-tip={first.locked ? "Unlock section" : "Lock section"}
-        aria-label={first.locked ? "Unlock section" : "Lock section"}
+        label={first.locked ? "Unlock section" : "Lock section"}
+        on={!!first.locked}
+        icon={<LockIcon open={!first.locked} />}
         onClick={() => update(api, () => ({ locked: !first.locked }))}
-      >
-        <LockIcon open={!first.locked} />
-      </button>,
-    );
+      />,
+    ]);
   } else if (only("sticky")) {
-    groups.push(
+    groups.push([
       <ColorButton
         key="sticky"
-        label="Color"
+        side={side}
+        label="Change color"
         value={first.backgroundColor}
         colors={[STICKY_COLORS]}
+        custom={false}
         onPick={(c) => update(api, () => ({ backgroundColor: c }))}
       />,
-    );
+    ]);
   } else if (only("text")) {
-    groups.push(
-      <ColorButton key="ink" label="Text color" value={first.strokeColor} onPick={(c) => update(api, () => ({ strokeColor: c }))} />,
-    );
+    groups.push([
+      <ColorButton key="ink" side={side} label="Text color" value={first.strokeColor} onPick={(c) => update(api, () => ({ strokeColor: c }))} />,
+    ]);
   } else if (only("line", "pen")) {
-    groups.push(
+    const widths = only("pen") ? PEN_WIDTHS : LINE_WIDTHS;
+    groups.push([
       <ColorButton
         key="ink"
-        label="Color"
+        side={side}
+        label="Change color"
         value={first.strokeColor}
         tabs={only("line") ? LINE_TABS : undefined}
         tab={first.strokeStyle === "dashed" ? "dashed" : first.strokeStyle === "dotted" ? "dotted" : "solid"}
@@ -345,38 +352,45 @@ export function SelectionToolbar({ api }: { api: ExcalidrawImperativeAPI }) {
       />,
       <Dropdown
         key="width"
+        side={side}
         label="Thickness"
-        display={<span className="fx-stroke-sample" style={{ height: Math.max(1, first.strokeWidth) }} />}
-        entries={STROKE_WIDTHS.map((o) => ({
+        display={<LineStyleIcon />}
+        entries={widths.map((o) => ({
           label: o.label,
           checked: first.strokeWidth === o.value,
           onSelect: () => update(api, () => ({ strokeWidth: o.value })),
         }))}
       />,
-    );
+    ]);
   }
 
   if (text && only("text", "sticky", "shape")) {
     const size = FONT_SIZES.find((f) => f.value === text.fontSize);
-    groups.push(
-      <span key="d2" className="fx-st-divider" />,
+    const font = FONTS.find((f) => f.value === text.fontFamily);
+    groups.push([
       <Dropdown
         key="font"
-        label="Font"
+        side={side}
+        label={`Typeface${font ? `, ${font.label.toLowerCase()}` : ""}`}
         display={<FontIcon />}
         entries={FONTS.map((f) => ({
           label: f.label,
+          labelStyle: { fontFamily: `"${f.css}", var(--fx-font)`, fontSize: 13 },
           checked: text.fontFamily === f.value,
           onSelect: () => void ensureFont(f.css).then(() => update(api, null, () => ({ fontFamily: f.value }))),
         }))}
       />,
+    ]);
+    groups.push([
       <Dropdown
         key="size"
-        label="Text size"
+        side={side}
+        label="Font size"
         wide
         display={<span className="fx-st-text">{size?.label ?? `${Math.round(text.fontSize)} px`}</span>}
         entries={FONT_SIZES.map((f) => ({
           label: f.label,
+          labelStyle: f.preview,
           checked: text.fontSize === f.value,
           onSelect: () => {
             const css = FONTS.find((x) => x.value === text.fontFamily)?.css;
@@ -384,7 +398,8 @@ export function SelectionToolbar({ api }: { api: ExcalidrawImperativeAPI }) {
           },
         }))}
       />,
-      <span key="d4" className="fx-st-divider" />,
+    ]);
+    groups.push([
       <Toggle
         key="bold"
         label="Bold"
@@ -399,7 +414,7 @@ export function SelectionToolbar({ api }: { api: ExcalidrawImperativeAPI }) {
         icon={<StrikeIcon />}
         onClick={() => update(api, null, (el) => ({ customData: { ...el.customData, strike: !text.customData?.strike } }))}
       />,
-      <LinkButton key="link" value={first.link ?? ""} onChange={(link) => update(api, () => ({ link }))} />,
+      <LinkButton key="link" side={side} value={first.link ?? ""} onChange={(link) => update(api, () => ({ link }))} />,
       <Toggle
         key="list"
         label="Bulleted list"
@@ -413,65 +428,113 @@ export function SelectionToolbar({ api }: { api: ExcalidrawImperativeAPI }) {
           });
         }}
       />,
-      <span key="d5" className="fx-st-divider" />,
-      <Dropdown
-        key="align"
-        label="Alignment"
-        display={<AlignIcon align={(text.textAlign as "left") ?? "center"} />}
-        entries={ALIGNS.map((a) => ({
-          label: a.label,
-          checked: text.textAlign === a.value,
-          onSelect: () => update(api, null, () => ({ textAlign: a.value })),
-        }))}
-      />,
-    );
+    ]);
+    // Sticky notes keep their text at the top left, like FigJam.
+    if (!only("sticky"))
+      groups.push([
+        <Dropdown
+          key="align"
+          side={side}
+          label="Text alignment"
+          display={<AlignIcon align={(text.textAlign as "left") ?? "center"} />}
+          entries={ALIGNS.map((a) => ({
+            label: a.label,
+            checked: text.textAlign === a.value,
+            onSelect: () => update(api, null, () => ({ textAlign: a.value })),
+          }))}
+        />,
+      ]);
   }
 
-  const ctrl = { ctrlKey: true, metaKey: true };
-  const more: MenuEntry[] = [
-    { label: "Bring to front", shortcut: "Ctrl+Shift+]", onSelect: () => press({ key: "]", code: "BracketRight", shiftKey: true, ...ctrl }) },
-    { label: "Send to back", shortcut: "Ctrl+Shift+[", onSelect: () => press({ key: "[", code: "BracketLeft", shiftKey: true, ...ctrl }) },
-    { separator: true },
-    { label: "Duplicate", shortcut: "Ctrl+D", onSelect: () => press({ key: "d", code: "KeyD", ...ctrl }) },
-    { label: "Delete", shortcut: "Del", onSelect: () => press({ key: "Delete", code: "Delete" }) },
-  ];
-  if (groups.length) groups.push(<span key="d3" className="fx-st-divider" />);
-  groups.push(<Dropdown key="more" label="More" display={<DotsIcon />} noCaret entries={more} />);
+  if (!groups.length) return null;
 
   return (
-    <div className="fx-selection-toolbar" style={style} onMouseDown={(e) => e.preventDefault()}>
-      {groups}
+    <div
+      ref={bar}
+      className="fx-selection-toolbar"
+      role="toolbar"
+      aria-label="Selection properties"
+      style={{ top: barTop, left: centerX.current }}
+      onMouseDown={(e) => e.preventDefault()}
+    >
+      {groups.map((group, i) => [i > 0 && <span key={`d${i}`} className="fx-st-divider" />, ...group])}
     </div>
   );
 }
 
 // ---- Controls ----------------------------------------------------------------
 
-const LINE_TABS: { id: "solid" | "dashed" | "dotted"; label: string; icon: ReactNode }[] = [
-  { id: "solid", label: "Solid", icon: STROKE_TABS[0].icon },
-  { id: "dashed", label: "Dashed", icon: STROKE_TABS[1].icon },
-  {
-    id: "dotted",
-    label: "Dotted",
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden fill="currentColor">
-        <circle cx="3" cy="11" r="1" />
-        <circle cx="7" cy="7" r="1" />
-        <circle cx="11" cy="3" r="1" />
-      </svg>
-    ),
-  },
-];
+type Side = "above" | "below";
 
 function Swatch({ value }: { value: string }) {
-  return <span className="fx-swatch" data-none={value === "transparent" || undefined} style={{ ["--c" as string]: value }} />;
+  return (
+    <span className="fx-st-swatch-ring">
+      <span className="fx-st-swatch" data-none={value === "transparent" || undefined} style={{ ["--c" as string]: value }} />
+    </span>
+  );
+}
+
+/** A full-height button with the visible (hover) area inside it, like FigJam. */
+function StButton({
+  label,
+  tip,
+  open,
+  on,
+  wide,
+  square,
+  onClick,
+  children,
+}: {
+  label: string;
+  tip?: string;
+  open?: boolean;
+  on?: boolean;
+  wide?: boolean;
+  square?: boolean;
+  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className="fx-st-btn"
+      data-tip={tip ?? label}
+      aria-label={label}
+      aria-pressed={on}
+      data-open={open || undefined}
+      data-on={on || undefined}
+      data-wide={wide || undefined}
+      data-square={square || undefined}
+      onClick={onClick}
+    >
+      <span className="fx-st-inner">{children}</span>
+    </button>
+  );
+}
+
+function IconButton({ label, icon, onClick }: { label: string; icon: ReactNode; onClick: () => void }) {
+  return (
+    <StButton label={label} square onClick={onClick}>
+      {icon}
+    </StButton>
+  );
+}
+
+function Toggle({ label, on, icon, onClick }: { label: string; on: boolean; icon: ReactNode; onClick: () => void }) {
+  return (
+    <StButton label={label} on={on} square onClick={onClick}>
+      {icon}
+    </StButton>
+  );
 }
 
 function ShapeSwitch({
+  side,
   current,
   allowed,
   onPick,
 }: {
+  side: Side;
   current: ShapeKind;
   allowed: (k: ShapeKind) => boolean;
   onPick: (k: ShapeKind) => void;
@@ -479,19 +542,12 @@ function ShapeSwitch({
   const menu = useMenu();
   return (
     <>
-      <button
-        type="button"
-        className="fx-st-btn"
-        data-tip="Shape"
-        aria-label="Shape"
-        data-open={!!menu.anchor || undefined}
-        onClick={(e) => menu.toggle(e.currentTarget)}
-      >
-        {SHAPE_ICONS[current]}
-        <ChevronDown size={10} />
-      </button>
+      <StButton label={`Shape, ${SHAPE_LABELS[current].toLowerCase()}`} tip="Shape" open={!!menu.anchor} onClick={(e) => menu.toggle(e.currentTarget)}>
+        <ShapeSwitchIcon />
+        <ChevronDown />
+      </StButton>
       {menu.anchor && (
-        <Popover anchor={menu.anchor} onClose={menu.close}>
+        <Popover anchor={menu.anchor} side={side} onClose={menu.close}>
           <div className="fx-shape-grid">
             {SHAPES.map((k) => (
               <button
@@ -500,7 +556,7 @@ function ShapeSwitch({
                 className="fx-shape-cell"
                 data-active={k === current || undefined}
                 disabled={!allowed(k)}
-                title={allowed(k) ? SHAPE_LABELS[k] : `${SHAPE_LABELS[k]} (remove its text or connectors first)`}
+                data-tip={allowed(k) ? SHAPE_LABELS[k] : `${SHAPE_LABELS[k]} (remove its text or connectors first)`}
                 aria-label={SHAPE_LABELS[k]}
                 onClick={() => {
                   menu.close();
@@ -517,25 +573,19 @@ function ShapeSwitch({
   );
 }
 
-function FillButton({ value, onChange }: { value: string; onChange: (color: string) => void }) {
+function FillButton({ side, value, onChange }: { side: Side; value: string; onChange: (color: string) => void }) {
   const menu = useMenu();
   const mode = fillMode(value);
   return (
     <>
-      <button
-        type="button"
-        className="fx-st-btn"
-        data-tip="Fill"
-        aria-label="Fill"
-        data-open={!!menu.anchor || undefined}
-        onClick={(e) => menu.toggle(e.currentTarget)}
-      >
+      <StButton label="Change color" open={!!menu.anchor} onClick={(e) => menu.toggle(e.currentTarget)}>
         <Swatch value={value} />
-        <ChevronDown size={10} />
-      </button>
+        <ChevronDown />
+      </StButton>
       {menu.anchor && (
         <ColorPopover
           anchor={menu.anchor}
+          side={side}
           value={value}
           tabs={FILL_TABS}
           tab={mode}
@@ -549,10 +599,12 @@ function FillButton({ value, onChange }: { value: string; onChange: (color: stri
 }
 
 function StrokeButton({
+  side,
   color,
   style,
   onChange,
 }: {
+  side: Side;
   color: string;
   style: string;
   onChange: (p: { strokeColor?: string; strokeStyle?: string }) => void;
@@ -561,20 +613,14 @@ function StrokeButton({
   const mode: StrokeMode = color === "transparent" ? "none" : style === "dashed" ? "dashed" : "solid";
   return (
     <>
-      <button
-        type="button"
-        className="fx-st-btn"
-        data-tip="Outline"
-        aria-label="Outline"
-        data-open={!!menu.anchor || undefined}
-        onClick={(e) => menu.toggle(e.currentTarget)}
-      >
-        <StrokeIcon />
-        <ChevronDown size={10} />
-      </button>
+      <StButton label="Line style" open={!!menu.anchor} onClick={(e) => menu.toggle(e.currentTarget)}>
+        <LineStyleIcon />
+        <ChevronDown />
+      </StButton>
       {menu.anchor && (
         <ColorPopover
           anchor={menu.anchor}
+          side={side}
           value={color}
           tabs={STROKE_TABS}
           tab={mode}
@@ -582,7 +628,7 @@ function StrokeButton({
             onChange(
               t === "none"
                 ? { strokeColor: "transparent" }
-                : { strokeStyle: t, ...(color === "transparent" ? { strokeColor: "#1e1e1e" } : {}) },
+                : { strokeStyle: t, ...(color === "transparent" ? { strokeColor: "#757575" } : {}) },
             )
           }
           onPick={(c) => onChange({ strokeColor: c, ...(mode === "none" ? { strokeStyle: "solid" } : {}) })}
@@ -594,17 +640,21 @@ function StrokeButton({
 }
 
 function ColorButton<T extends string>({
+  side,
   label,
   value,
   colors = PALETTE,
+  custom,
   tabs,
   tab,
   onTab,
   onPick,
 }: {
+  side: Side;
   label: string;
   value: string;
-  colors?: { name: string; value: string }[][];
+  colors?: Swatch[][];
+  custom?: boolean;
   tabs?: { id: T; label: string; icon: ReactNode }[];
   tab?: T;
   onTab?: (t: T) => void;
@@ -613,22 +663,17 @@ function ColorButton<T extends string>({
   const menu = useMenu();
   return (
     <>
-      <button
-        type="button"
-        className="fx-st-btn"
-        data-tip={label}
-        aria-label={label}
-        data-open={!!menu.anchor || undefined}
-        onClick={(e) => menu.toggle(e.currentTarget)}
-      >
+      <StButton label={label} open={!!menu.anchor} onClick={(e) => menu.toggle(e.currentTarget)}>
         <Swatch value={baseColor(value)} />
-        <ChevronDown size={10} />
-      </button>
+        <ChevronDown />
+      </StButton>
       {menu.anchor && (
         <ColorPopover
           anchor={menu.anchor}
+          side={side}
           value={value}
           colors={colors}
+          custom={custom}
           tabs={tabs}
           tab={tab}
           onTab={onTab}
@@ -641,34 +686,27 @@ function ColorButton<T extends string>({
 }
 
 function Dropdown({
+  side,
   label,
   display,
   entries,
   wide,
-  noCaret,
 }: {
+  side: Side;
   label: string;
   display: ReactNode;
   entries: MenuEntry[];
   wide?: boolean;
-  noCaret?: boolean;
 }) {
   const menu = useMenu();
   return (
     <>
-      <button
-        type="button"
-        className="fx-st-btn"
-        data-wide={wide || undefined}
-        data-tip={label}
-        aria-label={label}
-        data-open={!!menu.anchor || undefined}
-        onClick={(e) => menu.toggle(e.currentTarget)}
-      >
+      <StButton label={label} tip={label.split(",")[0]} wide={wide} open={!!menu.anchor} onClick={(e) => menu.toggle(e.currentTarget)}>
         {display}
-        {!noCaret && <ChevronDown size={10} />}
-      </button>
-      {menu.anchor && <Menu anchor={menu.anchor} side="above" onClose={menu.close} entries={entries} />}
+        <ChevronDown />
+      </StButton>
+      {/* Like FigJam, pickers open under the toolbar (above it only when there's no room). */}
+      {menu.anchor && <Menu anchor={menu.anchor} side="below" compact onClose={menu.close} entries={entries} />}
     </>
   );
 }
@@ -712,35 +750,7 @@ function fitSections(api: ExcalidrawImperativeAPI, sections: readonly Excalidraw
   api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
 }
 
-function Toggle({
-  label,
-  shortcut,
-  on,
-  icon,
-  onClick,
-}: {
-  label: string;
-  shortcut?: string;
-  on: boolean;
-  icon: ReactNode;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className="fx-st-btn fx-st-toggle"
-      data-on={on || undefined}
-      data-tip={shortcut ? `${label}  ${shortcut}` : label}
-      aria-label={label}
-      aria-pressed={on}
-      onClick={onClick}
-    >
-      {icon}
-    </button>
-  );
-}
-
-function LinkButton({ value, onChange }: { value: string; onChange: (link: string | null) => void }) {
+function LinkButton({ side, value, onChange }: { side: Side; value: string; onChange: (link: string | null) => void }) {
   const menu = useMenu();
   const [draft, setDraft] = useState(value);
   const save = () => {
@@ -750,22 +760,20 @@ function LinkButton({ value, onChange }: { value: string; onChange: (link: strin
   };
   return (
     <>
-      <button
-        type="button"
-        className="fx-st-btn fx-st-toggle"
-        data-on={!!value || undefined}
-        data-tip={value ? "Edit link" : "Add link"}
-        aria-label={value ? "Edit link" : "Add link"}
-        data-open={!!menu.anchor || undefined}
+      <StButton
+        label={value ? "Edit link" : "Create link"}
+        on={!!value}
+        open={!!menu.anchor}
+        square
         onClick={(e) => {
           setDraft(value);
           menu.toggle(e.currentTarget);
         }}
       >
         <LinkIcon />
-      </button>
+      </StButton>
       {menu.anchor && (
-        <Popover anchor={menu.anchor} onClose={menu.close} allowInput>
+        <Popover anchor={menu.anchor} side={side} onClose={menu.close} allowInput>
           <form
             className="fx-link-form"
             onSubmit={(e) => {
@@ -803,20 +811,34 @@ function LinkButton({ value, onChange }: { value: string; onChange: (link: strin
   );
 }
 
-/** Small dark popover above a button (used for the shape grid). */
+/** Small dark popover next to a toolbar button (shape grid, link field). */
 function Popover({
   anchor,
+  side,
   onClose,
   children,
   allowInput,
 }: {
   anchor: DOMRect;
+  side: Side;
   onClose: () => void;
   children: ReactNode;
   /** Let clicks focus inputs inside (otherwise the canvas keeps focus). */
   allowInput?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ left: anchor.left, top: anchor.top });
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const { width, height } = el.getBoundingClientRect();
+    const bar = el.parentElement?.closest(".fx-selection-toolbar")?.getBoundingClientRect() ?? anchor;
+    let top = side === "above" ? bar.top - height - 8 : bar.bottom + 8;
+    if (top < 8) top = bar.bottom + 8;
+    if (top + height > window.innerHeight - 8) top = bar.top - height - 8;
+    const left = Math.max(8, Math.min(anchor.left + anchor.width / 2 - width / 2, window.innerWidth - width - 8));
+    setPos({ left, top });
+  }, [anchor, side]);
   useEffect(() => {
     const onDown = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && onClose();
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -831,7 +853,7 @@ function Popover({
     <div
       ref={ref}
       className="fx-dark-pop"
-      style={{ left: anchor.left + anchor.width / 2, top: anchor.top - 8 }}
+      style={{ left: pos.left, top: pos.top }}
       onMouseDown={(e) => {
         if (!(allowInput && e.target instanceof HTMLInputElement)) e.preventDefault();
       }}

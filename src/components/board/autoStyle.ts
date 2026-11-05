@@ -6,7 +6,9 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 export const TEXT_DARK = "#1e1e1e";
 export const TEXT_LIGHT = "#ffffff";
 export const SECTION_FILL = "#ffffff";
-export const SECTION_STROKE = "#d4d4d4";
+export const SECTION_STROKE = "#e6e6e6";
+/** Space between a sticky note's edge and its text (same as Excalidraw's patched label padding). */
+const STICKY_PAD = 14;
 
 /** "#abc", "#aabbcc" or "#aabbccdd" → [r, g, b, a] (0–1 alpha). */
 function parseHex(color: string): [number, number, number, number] | null {
@@ -60,7 +62,16 @@ export function useAutoStyles(api: ExcalidrawImperativeAPI | null): void {
           const container = byId.get(el.containerId);
           if (!container || container.isDeleted || container.type === "arrow") continue;
           const want = readableTextColor(container.backgroundColor);
-          if (el.strokeColor !== want) patches.set(el.id, { strokeColor: want });
+          const patch: Record<string, unknown> = {};
+          if (el.strokeColor !== want) patch.strokeColor = want;
+          // New sticky notes keep their text at the top left, like FigJam.
+          if (container.customData?.topLeft && "textAlign" in el) {
+            const x = container.x + STICKY_PAD;
+            const y = container.y + STICKY_PAD;
+            if (el.textAlign !== "left" || el.verticalAlign !== "top" || Math.abs(el.x - x) > 0.5 || Math.abs(el.y - y) > 0.5)
+              Object.assign(patch, { textAlign: "left", verticalAlign: "top", x, y });
+          }
+          if (Object.keys(patch).length) patches.set(el.id, patch);
         } else if (isSection(el) && !el.customData?.section) {
           patches.set(el.id, {
             name: el.name && el.name !== "Frame" ? el.name : `Section ${++sectionNumber}`,

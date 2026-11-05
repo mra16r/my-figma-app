@@ -9,7 +9,7 @@ const ARROW_SVG =
   "<path d='M5.5 3.2v15.6l4.1-3.9 2.6 5.9 2.7-1.2-2.6-5.8 5.6-.2z' fill='%23000' stroke='%23fff' stroke-width='1.3' stroke-linejoin='round'/></svg>";
 export const ARROW_CURSOR = `url("data:image/svg+xml,${ARROW_SVG.replace(/"/g, "'").replace(/</g, "%3C").replace(/>/g, "%3E")}") 5 3, default`;
 
-export const STICKY_SIZE = 200;
+export const STICKY_SIZE = 240;
 
 /**
  * Excalidraw shows a "move" cross over shapes and a hand over handles.
@@ -44,14 +44,14 @@ export function useArrowCursor(container: HTMLElement | null): void {
 export function useDotGrid(api: ExcalidrawImperativeAPI | null, page: HTMLElement | null): void {
   useEffect(() => {
     if (!api || !page) return;
-    const BASE = 24;
+    const BASE = 16; // FigJam's spacing at 100%
     const apply = (scrollX: number, scrollY: number, zoom: number) => {
       let size = BASE * zoom;
-      while (size < 14) size *= 2; // keep dots from crowding when zoomed out
+      while (size < 12) size *= 2; // keep dots from crowding when zoomed out
+      while (size > 32) size /= 2; // and from drifting apart when zoomed in
       page.style.setProperty("--grid-size", `${size}px`);
       page.style.setProperty("--grid-x", `${(scrollX * zoom) % size}px`);
       page.style.setProperty("--grid-y", `${(scrollY * zoom) % size}px`);
-      page.style.setProperty("--grid-dot", `${zoom < 0.3 ? 0.8 : 1}px`);
     };
     const s = api.getAppState();
     apply(s.scrollX, s.scrollY, s.zoom.value);

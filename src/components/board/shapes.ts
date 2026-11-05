@@ -23,19 +23,19 @@ export type ShapeKind =
   | "triangle-down";
 
 export const CONNECTORS: ShapeKind[] = ["elbow", "curved", "straight", "line"];
-export const SHAPES: ShapeKind[] = ["square", "rounded", "circle", "diamond", "triangle", "triangle-down"];
+export const SHAPES: ShapeKind[] = ["square", "circle", "diamond", "triangle", "triangle-down", "rounded"];
 
 export const SHAPE_LABELS: Record<ShapeKind, string> = {
-  elbow: "Elbow connector",
+  elbow: "Bent connector",
   curved: "Curved connector",
-  straight: "Arrow",
-  line: "Line",
+  straight: "Connector",
+  line: "Connector, no endpoints",
   square: "Square",
-  rounded: "Rounded square",
+  rounded: "Rounded rectangle",
   circle: "Ellipse",
   diamond: "Diamond",
   triangle: "Triangle",
-  "triangle-down": "Down triangle",
+  "triangle-down": "Downward-pointing triangle",
 };
 
 export const isConnector = (k: ShapeKind) => CONNECTORS.includes(k);
