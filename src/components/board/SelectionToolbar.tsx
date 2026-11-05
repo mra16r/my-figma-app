@@ -38,7 +38,18 @@ import {
   StrikeIcon,
 } from "./icons";
 import { canConvert, convertShapes, SHAPE_LABELS, SHAPES, shapeOf, type ShapeKind } from "./shapes";
-import { activeRichEditor, paragraphSizes, withoutSizes } from "./richText";
+import {
+  activeRichEditor,
+  allMarked,
+  BOLD,
+  FORMAT_EVENT,
+  hasBullets,
+  markAll,
+  paragraphSizes,
+  STRIKE,
+  toggleBullets,
+  withoutSizes,
+} from "./richText";
 import { INTER_FONT, placeLabel, type TextLike } from "./textLayout";
 import { SHAPE_ICONS } from "./Toolbar";
 
@@ -209,8 +220,9 @@ export function SelectionToolbar({ api }: { api: ExcalidrawImperativeAPI }) {
           .filter((el) => ids[el.id] || (el.type === "text" && el.containerId && ids[el.containerId]))
           .map((el) => `${el.id}:${el.version}`)
           .join(",");
-        // While typing, the size shown follows the selected lines.
-        const sizes = editing ? (activeRichEditor()?.selectedSizes().join("/") ?? "") : "";
+        // While typing, the size and styles shown follow the selected letters.
+        const typing = editing ? activeRichEditor() : null;
+        const sizes = typing ? `${typing.selectedSizes().join("/")}|${typing.formatKey()}` : "";
         key = `${versions}|${sizes}|${s.scrollX}|${s.scrollY}|${s.zoom.value}|${s.width}|${s.height}`;
       }
       if (key !== lastKey.current) {
@@ -219,8 +231,10 @@ export function SelectionToolbar({ api }: { api: ExcalidrawImperativeAPI }) {
       }
     };
     document.addEventListener("selectionchange", check);
+    document.addEventListener(FORMAT_EVENT, check);
     const offs = [
       () => document.removeEventListener("selectionchange", check),
+      () => document.removeEventListener(FORMAT_EVENT, check),
       api.onChange(check),
       api.onScrollChange(check),
       api.onPointerDown(() => {
@@ -407,33 +421,34 @@ export function SelectionToolbar({ api }: { api: ExcalidrawImperativeAPI }) {
         footer={<SizeField value={mixed ? null : inPlay[0]} onApply={applySize} />}
       />,
     ]);
+    // While typing: the highlighted letters (or the next ones typed) and the lines
+    // with the caret, like FigJam. Otherwise: all of the text.
+    const format = editor?.formatState();
+    const markToggle = (bit: number) => {
+      const on = format ? (bit === BOLD ? format.bold : format.strike) : allMarked(text, bit);
+      return {
+        on,
+        onClick: () => {
+          const typing = activeRichEditor();
+          if (typing) typing.toggleMark(bit);
+          else update(api, null, (el) => markAll(el, bit, !on));
+        },
+      };
+    };
+    const bullets = format ? format.bullets : hasBullets(text);
     groups.push([
-      <Toggle
-        key="bold"
-        label="Bold"
-        on={!!text.customData?.bold}
-        icon={<BoldIcon />}
-        onClick={() => update(api, null, (el) => ({ customData: { ...el.customData, bold: !text.customData?.bold } }))}
-      />,
-      <Toggle
-        key="strike"
-        label="Strikethrough"
-        on={!!text.customData?.strike}
-        icon={<StrikeIcon />}
-        onClick={() => update(api, null, (el) => ({ customData: { ...el.customData, strike: !text.customData?.strike } }))}
-      />,
+      <Toggle key="bold" label="Bold" icon={<BoldIcon />} {...markToggle(BOLD)} />,
+      <Toggle key="strike" label="Strikethrough" icon={<StrikeIcon />} {...markToggle(STRIKE)} />,
       <LinkButton key="link" side={side} value={first.link ?? ""} onChange={(link) => update(api, () => ({ link }))} />,
       <Toggle
         key="list"
         label="Bulleted list"
-        on={hasBullets(text)}
+        on={bullets}
         icon={<ListIcon />}
         onClick={() => {
-          const add = !hasBullets(text);
-          update(api, null, (el) => {
-            const next = toggleBullets((el as TextLike & { originalText: string }).originalText, add);
-            return { originalText: next, text: next };
-          });
+          const typing = activeRichEditor();
+          if (typing) typing.toggleBullets();
+          else update(api, null, (el) => toggleBullets(el, !bullets));
         }}
       />,
     ]);
@@ -779,25 +794,6 @@ function SizeField({ value, onApply }: { value: number | null; onApply: (size: n
       />
     </div>
   );
-}
-
-const BULLET = "• ";
-
-function hasBullets(text: TextLike): boolean {
-  const lines = ((text as TextLike & { originalText?: string }).originalText ?? "").split("\n").filter((l) => l.trim());
-  return lines.length > 0 && lines.every((l) => l.startsWith(BULLET));
-}
-
-/** Adds or removes "• " at the start of every non-empty line. */
-function toggleBullets(source: string, add: boolean): string {
-  return source
-    .split("\n")
-    .map((line) => {
-      if (!line.trim()) return line;
-      if (add) return line.startsWith(BULLET) ? line : BULLET + line;
-      return line.startsWith(BULLET) ? line.slice(BULLET.length) : line;
-    })
-    .join("\n");
 }
 
 /** Shrinks or grows sections to wrap what's inside them, with some room. */

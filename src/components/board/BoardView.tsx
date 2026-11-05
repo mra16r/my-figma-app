@@ -80,7 +80,16 @@ const DEFAULT_STYLE: Partial<AppState> = {
   currentItemArrowType: "elbow",
   // Sections: names as pills (styled in CSS), fill and outline drawn by SectionLayer, no clipping.
   frameRendering: { enabled: true, name: true, outline: false, clip: false },
+  // Alignment guides and snapping when moving, sizing and drawing, like FigJam
+  // (hold Ctrl to place freely; Alt+S turns it off until the board is opened again).
+  objectsSnapModeEnabled: true,
 };
+
+/** Text typed into a sticky note starts at Medium (the patched Excalidraw asks for it). */
+const STICKY_TEXT_SIZE = 24;
+(globalThis as unknown as { __mfaLabelSize?: (container: ExcalidrawElement) => number | undefined }).__mfaLabelSize = (
+  container,
+) => (container.customData?.kind === "sticky" ? STICKY_TEXT_SIZE : undefined);
 
 const SAVE_DELAY_MS = 1000;
 const RETRY_DELAY_MS = 10_000;

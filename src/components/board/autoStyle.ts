@@ -57,8 +57,12 @@ export function useAutoStyles(api: ExcalidrawImperativeAPI | null): void {
         if (m) sectionNumber = Math.max(sectionNumber, Number(m[1]));
       }
 
+      // Not the shape being drawn right now: replacing it would stop Excalidraw
+      // from sizing it (a new section stayed tiny).
+      const drawing = api.getAppState().newElement?.id;
+
       for (const el of elements) {
-        if (el.isDeleted) continue;
+        if (el.isDeleted || el.id === drawing) continue;
         if (el.type === "text") {
           // Text hidden by an earlier bug (a size that isn't a number): measure and place it again.
           const owner = el.containerId ? byId.get(el.containerId) : undefined;
@@ -76,13 +80,12 @@ export function useAutoStyles(api: ExcalidrawImperativeAPI | null): void {
             patches.set(el.id, container ? { ...sized, ...placeLabel({ ...m, ...sized } as TextLike, container).text } : sized);
             continue;
           }
-          // Mixed sizes whose line list no longer matches the drawn lines (a change
-          // Excalidraw made on its own): lay the text out again.
-          const lineSizes = el.customData?.lineSizes;
-          if (
-            Array.isArray(el.customData?.paraSizes) &&
-            !(Array.isArray(lineSizes) && lineSizes.length === (el as unknown as TextLike).text.split("\n").length)
-          ) {
+          // Mixed sizes or styled parts whose line lists no longer match the drawn
+          // lines (a change Excalidraw made on its own): lay the text out again.
+          const { lineSizes, lineRuns, paraSizes } = el.customData ?? {};
+          const drawn = (el as unknown as TextLike).text.split("\n").length;
+          const fits = (list: unknown) => Array.isArray(list) && list.length === drawn;
+          if ((Array.isArray(paraSizes) || Array.isArray(lineRuns)) && !(fits(lineSizes) && (!lineRuns || fits(lineRuns)))) {
             const t = el as unknown as TextLike;
             const [measured] = restoreElements(
               [{ ...el, text: t.originalText } as ExcalidrawElement, ...(container ? [container] : [])],

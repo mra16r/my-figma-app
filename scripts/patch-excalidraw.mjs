@@ -18,6 +18,12 @@
 //     the colors __mfaInk gives, images aren't re-inverted, and cached shapes
 //     remember which colors they were made with (light, dark or export), so
 //     exports stay light.
+// 10. Bold and strikethrough on parts of a text: lines with pieces
+//     (customData.lineRuns, from the app's layout) are drawn piece by piece,
+//     on the canvas (__mfaDrawRuns) and in SVG exports (__mfaSvgRuns).
+// 11. New text in a shape gets the size the app asks for (__mfaLabelSize: sticky
+//     notes start at Medium, like FigJam asks for here).
+// 12. Snap guides in FigJam blue, without Excalidraw's little crosses.
 // Each change is an exact text replacement; if Excalidraw changes, this stops
 // with a clear message instead of silently doing nothing. Changes already in
 // place are skipped, so new ones can be added to an installed copy.
@@ -39,7 +45,7 @@ if (version !== EXPECTED_VERSION) {
 // Drawing text lines: each line can have its own size (customData.lineSizes, one per
 // drawn line, set by the app's mixed-size layout), and strikethrough is drawn per line.
 const LINES_PROD =
-  "{let __ls=e.customData?.lineSizes,__m=Array.isArray(__ls)&&__ls.length===s.length,__y=0;for(let U=0;U<s.length;U++){let __f=__m?__ls[U]:e.fontSize,__k=__f/e.fontSize,__Y=(__m?__y:U*c)+l*__k;__m&&(n.font=Ee({...e,fontSize:__f}));n.fillText(s[U],d,__Y);if(e.customData?.strike){let W=n.measureText(s[U]).width,X=e.textAlign===\"center\"?d-W/2:e.textAlign===\"right\"?d-W:d;n.fillRect(X,__Y-__f*.3,W,Math.max(1,__f/14))}__y+=c*__k}}n.restore()";
+  "{let __ls=e.customData?.lineSizes,__m=Array.isArray(__ls)&&__ls.length===s.length,__y=0;for(let U=0;U<s.length;U++){let __f=__m?__ls[U]:e.fontSize,__k=__f/e.fontSize,__Y=(__m?__y:U*c)+l*__k;__m&&(n.font=Ee({...e,fontSize:__f}));let __rd=globalThis.__mfaDrawRuns?.(n,e,U,s.length,d,__Y,__f,Ee);__rd||n.fillText(s[U],d,__Y);if(!__rd&&e.customData?.strike){let W=n.measureText(s[U]).width,X=e.textAlign===\"center\"?d-W/2:e.textAlign===\"right\"?d-W:d;n.fillRect(X,__Y-__f*.3,W,Math.max(1,__f/14))}__y+=c*__k}}n.restore()";
 const LINES_DEV = `        {
           const __ls = element.customData?.lineSizes;
           const __mixed = Array.isArray(__ls) && __ls.length === lines.length;
@@ -49,8 +55,9 @@ const LINES_DEV = `        {
             const __k = __fs / element.fontSize;
             const __lineY = (__mixed ? __y : index * lineHeightPx) + verticalOffset * __k;
             if (__mixed) context.font = getFontString({ ...element, fontSize: __fs });
-            context.fillText(lines[index], horizontalOffset, __lineY);
-            if (element.customData?.strike) {
+            const __rd = globalThis.__mfaDrawRuns?.(context, element, index, lines.length, horizontalOffset, __lineY, __fs, getFontString);
+            if (!__rd) context.fillText(lines[index], horizontalOffset, __lineY);
+            if (!__rd && element.customData?.strike) {
               const w = context.measureText(lines[index]).width;
               const x = element.textAlign === "center" ? horizontalOffset - w / 2 : element.textAlign === "right" ? horizontalOffset - w : horizontalOffset;
               context.fillRect(x, __lineY - __fs * 0.3, w, Math.max(1, __fs / 14));
@@ -113,7 +120,7 @@ const patches = [
       ],
       [
         'for(let B=0;B<w.length;B++){let _=r.ownerDocument.createElementNS(re,"text");_.textContent=w[B],_.setAttribute("x",`${S}`),_.setAttribute("y",`${B*I+v}`),_.setAttribute("font-family",ea(e)),_.setAttribute("font-size",`${e.fontSize}px`),',
-        'let __ls=e.customData?.lineSizes,__m=Array.isArray(__ls)&&__ls.length===w.length,__y=0;for(let B=0;B<w.length;B++){let __f=__m?__ls[B]:e.fontSize,__k=__f/e.fontSize,_=r.ownerDocument.createElementNS(re,"text");_.textContent=w[B],_.setAttribute("x",`${S}`),_.setAttribute("y",`${(__m?__y:B*I)+v*__k}`),__y+=I*__k,_.setAttribute("font-family",ea(e)),_.setAttribute("font-size",`${__f}px`),e.customData?.bold&&_.setAttribute("font-weight","bold"),',
+        'let __ls=e.customData?.lineSizes,__m=Array.isArray(__ls)&&__ls.length===w.length,__y=0;for(let B=0;B<w.length;B++){let __f=__m?__ls[B]:e.fontSize,__k=__f/e.fontSize,_=r.ownerDocument.createElementNS(re,"text");_.textContent=w[B],_.setAttribute("x",`${S}`),_.setAttribute("y",`${(__m?__y:B*I)+v*__k}`),__y+=I*__k,_.setAttribute("font-family",ea(e)),_.setAttribute("font-size",`${__f}px`),e.customData?.bold&&_.setAttribute("font-weight","bold"),globalThis.__mfaSvgRuns?.(_,e,B,w.length),',
       ],
       ["mouse:8,pen:16,touch:28", "mouse:10,pen:16,touch:28"],
       ["o=parseFloat(t),i=B6(r,o,n)", `o=${SIZE_OF("t")},i=B6(r,o,n)`],
@@ -166,6 +173,11 @@ const patches = [
         'd=document.createElement("textarea");d.dir="auto"',
         'd=globalThis.__mfaCreateEditor?globalThis.__mfaCreateEditor(n):document.createElement("textarea");d.dir="auto"',
       ],
+      [
+        "u=this.state.currentItemFontSize;if(!c&&l&&i&&!Ne(i)){",
+        "u=(l&&i&&globalThis.__mfaLabelSize?.(i))||this.state.currentItemFontSize;if(!c&&l&&i&&!Ne(i)){",
+      ],
+      ['var c5="#ff6b6b",d5="#ff0000",G1=1,Y1=2,', `var c5="${BLUE}",d5="${BLUE}",G1=1,Y1=0,`],
     ],
   },
   {
@@ -194,7 +206,7 @@ const patches = [
       ],
       [
         '          text.setAttribute("x", `${horizontalOffset}`);\n          text.setAttribute("y", `${i * lineHeightPx + verticalOffset}`);\n          text.setAttribute("font-family", getFontFamilyString(element));\n          text.setAttribute("font-size", `${element.fontSize}px`);',
-        '          const __ls = element.customData?.lineSizes;\n          const __mixed = Array.isArray(__ls) && __ls.length === lines.length;\n          const __fs = __mixed ? __ls[i] : element.fontSize;\n          const __y = __mixed ? __ls.slice(0, i).reduce((sum, f) => sum + lineHeightPx * f / element.fontSize, 0) : i * lineHeightPx;\n          text.setAttribute("x", `${horizontalOffset}`);\n          text.setAttribute("y", `${__y + verticalOffset * __fs / element.fontSize}`);\n          text.setAttribute("font-family", getFontFamilyString(element));\n          text.setAttribute("font-size", `${__fs}px`);\n          if (element.customData?.bold) text.setAttribute("font-weight", "bold");',
+        '          const __ls = element.customData?.lineSizes;\n          const __mixed = Array.isArray(__ls) && __ls.length === lines.length;\n          const __fs = __mixed ? __ls[i] : element.fontSize;\n          const __y = __mixed ? __ls.slice(0, i).reduce((sum, f) => sum + lineHeightPx * f / element.fontSize, 0) : i * lineHeightPx;\n          text.setAttribute("x", `${horizontalOffset}`);\n          text.setAttribute("y", `${__y + verticalOffset * __fs / element.fontSize}`);\n          text.setAttribute("font-family", getFontFamilyString(element));\n          text.setAttribute("font-size", `${__fs}px`);\n          if (element.customData?.bold) text.setAttribute("font-weight", "bold");\n          globalThis.__mfaSvgRuns?.(text, element, i, lines.length);',
       ],
       ["var transformHandleSizes = {\n  mouse: 8,", "var transformHandleSizes = {\n  mouse: 10,"],
       [
@@ -264,6 +276,14 @@ const patches = [
       [
         '  const editable = document.createElement("textarea");\n  editable.dir = "auto";',
         '  const editable = globalThis.__mfaCreateEditor ? globalThis.__mfaCreateEditor(element) : document.createElement("textarea");\n  editable.dir = "auto";',
+      ],
+      [
+        "      const fontSize = this.state.currentItemFontSize;\n      if (!existingTextElement && shouldBindToContainer && container && !isArrowElement(container)) {",
+        "      const fontSize = shouldBindToContainer && container && globalThis.__mfaLabelSize?.(container) || this.state.currentItemFontSize;\n      if (!existingTextElement && shouldBindToContainer && container && !isArrowElement(container)) {",
+      ],
+      [
+        'var SNAP_COLOR_LIGHT = "#ff6b6b";\nvar SNAP_COLOR_DARK = "#ff0000";\nvar SNAP_WIDTH = 1;\nvar SNAP_CROSS_SIZE = 2;',
+        `var SNAP_COLOR_LIGHT = "${BLUE}";\nvar SNAP_COLOR_DARK = "${BLUE}";\nvar SNAP_WIDTH = 1;\nvar SNAP_CROSS_SIZE = 0;`,
       ],
     ],
   },
