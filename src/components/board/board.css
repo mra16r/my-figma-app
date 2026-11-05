@@ -130,6 +130,18 @@
   margin: 8px 0;
 }
 
+/* The app's in-place text editor (each line at its own size). Excalidraw places it. */
+mfa-rich-text {
+  outline: none;
+  cursor: text;
+  caret-color: currentColor;
+}
+
+mfa-rich-text > div {
+  margin: 0;
+  padding: 0;
+}
+
 /* ---- Overlay ---- */
 .fx-ui {
   position: absolute;

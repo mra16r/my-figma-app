@@ -9,6 +9,10 @@
 //     with FigJam's 150% line height.
 //  7. Text height reads the size from the "16px" part of the font text, so a
 //     weight in front of it ("bold 16px") doesn't break it.
+//  8. Mixed text sizes, like FigJam: lines are drawn (canvas and SVG) at their own
+//     size, the app lays out such text itself, and the in-place text editor can be
+//     the app's rich editor (which shows each line at its size while typing).
+//     SVG export also keeps bold text bold.
 // Each change is an exact text replacement; if Excalidraw changes, this stops
 // with a clear message instead of silently doing nothing. Changes already in
 // place are skipped, so new ones can be added to an installed copy.
@@ -27,10 +31,32 @@ if (version !== EXPECTED_VERSION) {
   throw new Error(`patch-excalidraw: expected Excalidraw ${EXPECTED_VERSION}, found ${version}. Update the patches.`);
 }
 
-const STRIKE_PROD =
-  "if(e.customData?.strike){let W=n.measureText(s[U]).width,X=e.textAlign===\"center\"?d-W/2:e.textAlign===\"right\"?d-W:d;n.fillRect(X,U*c+l-e.fontSize*.3,W,Math.max(1,e.fontSize/14))}";
-const STRIKE_DEV =
-  "if (element.customData?.strike) { const w = context.measureText(lines[index]).width; const x = element.textAlign === \"center\" ? horizontalOffset - w / 2 : element.textAlign === \"right\" ? horizontalOffset - w : horizontalOffset; context.fillRect(x, index * lineHeightPx + verticalOffset - element.fontSize * 0.3, w, Math.max(1, element.fontSize / 14)); }";
+// Drawing text lines: each line can have its own size (customData.lineSizes, one per
+// drawn line, set by the app's mixed-size layout), and strikethrough is drawn per line.
+const LINES_PROD =
+  "{let __ls=e.customData?.lineSizes,__m=Array.isArray(__ls)&&__ls.length===s.length,__y=0;for(let U=0;U<s.length;U++){let __f=__m?__ls[U]:e.fontSize,__k=__f/e.fontSize,__Y=(__m?__y:U*c)+l*__k;__m&&(n.font=Ee({...e,fontSize:__f}));n.fillText(s[U],d,__Y);if(e.customData?.strike){let W=n.measureText(s[U]).width,X=e.textAlign===\"center\"?d-W/2:e.textAlign===\"right\"?d-W:d;n.fillRect(X,__Y-__f*.3,W,Math.max(1,__f/14))}__y+=c*__k}}n.restore()";
+const LINES_DEV = `        {
+          const __ls = element.customData?.lineSizes;
+          const __mixed = Array.isArray(__ls) && __ls.length === lines.length;
+          let __y = 0;
+          for (let index = 0; index < lines.length; index++) {
+            const __fs = __mixed ? __ls[index] : element.fontSize;
+            const __k = __fs / element.fontSize;
+            const __lineY = (__mixed ? __y : index * lineHeightPx) + verticalOffset * __k;
+            if (__mixed) context.font = getFontString({ ...element, fontSize: __fs });
+            context.fillText(lines[index], horizontalOffset, __lineY);
+            if (element.customData?.strike) {
+              const w = context.measureText(lines[index]).width;
+              const x = element.textAlign === "center" ? horizontalOffset - w / 2 : element.textAlign === "right" ? horizontalOffset - w : horizontalOffset;
+              context.fillRect(x, __lineY - __fs * 0.3, w, Math.max(1, __fs / 14));
+            }
+            __y += lineHeightPx * __k;
+          }
+        }`;
+
+// Text layout: the app lays out text with mixed sizes itself (globalThis.__mfaMixedLayout,
+// see src/components/board/richText.ts); Excalidraw's own layout is used otherwise.
+const MIXED_CALL = (el, text, maxW, fns) => `globalThis.__mfaMixedLayout?.(${el}, ${text}, ${maxW}, ${fns})`;
 
 // Connector points and "connect here" highlights: FigJam blue instead of Excalidraw purple.
 const BLUE = "#0d99ff";
@@ -62,9 +88,22 @@ const patches = [
         "Ee=({fontSize:e,fontFamily:t})=>`${e}px ${ea({fontFamily:t})}`",
         `Ee=(o)=>\`${WEIGHT_MIN}\${o.fontSize}px \${ea({fontFamily:o.fontFamily})}\``,
       ],
+      ["for(let U=0;U<s.length;U++)n.fillText(s[U],d,U*c+l);n.restore()", LINES_PROD],
       [
-        "for(let U=0;U<s.length;U++)n.fillText(s[U],d,U*c+l);n.restore()",
-        `for(let U=0;U<s.length;U++){n.fillText(s[U],d,U*c+l);${STRIKE_PROD}}n.restore()`,
+        "Ga=(e,t,n,r=e.text)=>{if(e.isDeleted)return;(t||",
+        `Ga=(e,t,n,r=e.text)=>{if(e.isDeleted)return;{let __x=${MIXED_CALL("e", "r", "t?Tt(t,e):e.autoResize?1/0:e.width", "{font:Ee,wrap:en,measure:ht}")};if(__x)return __x}(t||`,
+      ],
+      [
+        "let a=ht(i.text,Ee(e),e.lineHeight);if(e.autoResize&&(i.width=a.width)",
+        `let a=ht(i.text,Ee(e),e.lineHeight);{let __x=${MIXED_CALL("e", "e.originalText", "t?Tt(t,e):e.autoResize?1/0:e.width", "{font:Ee,wrap:en,measure:ht}")};__x&&(i.text=__x.text,a={width:__x.width,height:__x.height},i.customData=__x.customData,__x.fontSize&&(i.fontSize=__x.fontSize))}if(e.autoResize&&(i.width=a.width)`,
+      ],
+      [
+        "let p=ht(a,Ee(i),i.lineHeight);s=p.height,d=p.width}if(s>l){",
+        `let p=ht(a,Ee(i),i.lineHeight);s=p.height,d=p.width;{let __x=${MIXED_CALL("i", "i.originalText", "c", "{font:Ee,wrap:en,measure:ht}")};__x&&(a=__x.text,s=__x.height,d=__x.width,Y(i,{customData:__x.customData}))}}if(s>l){`,
+      ],
+      [
+        'for(let B=0;B<w.length;B++){let _=r.ownerDocument.createElementNS(re,"text");_.textContent=w[B],_.setAttribute("x",`${S}`),_.setAttribute("y",`${B*I+v}`),_.setAttribute("font-family",ea(e)),_.setAttribute("font-size",`${e.fontSize}px`),',
+        'let __ls=e.customData?.lineSizes,__m=Array.isArray(__ls)&&__ls.length===w.length,__y=0;for(let B=0;B<w.length;B++){let __f=__m?__ls[B]:e.fontSize,__k=__f/e.fontSize,_=r.ownerDocument.createElementNS(re,"text");_.textContent=w[B],_.setAttribute("x",`${S}`),_.setAttribute("y",`${(__m?__y:B*I)+v*__k}`),__y+=I*__k,_.setAttribute("font-family",ea(e)),_.setAttribute("font-size",`${__f}px`),e.customData?.bold&&_.setAttribute("font-weight","bold"),',
       ],
       ["mouse:8,pen:16,touch:28", "mouse:10,pen:16,touch:28"],
       ["o=parseFloat(t),i=B6(r,o,n)", `o=${SIZE_OF("t")},i=B6(r,o,n)`],
@@ -94,6 +133,10 @@ const patches = [
         `e.strokeStyle="${BLUE}",e.setLineDash([]),e.fillStyle="rgba(255, 255, 255, 0.9)",n?e.fillStyle="${BLUE_FILL}":i&&(e.fillStyle="${BLUE_SOFT}")`,
       ],
       ["rgba(105, 101, 219, 0.4)", BLUE_HIGHLIGHT],
+      [
+        'd=document.createElement("textarea");d.dir="auto"',
+        'd=globalThis.__mfaCreateEditor?globalThis.__mfaCreateEditor(n):document.createElement("textarea");d.dir="auto"',
+      ],
     ],
   },
   {
@@ -106,7 +149,23 @@ const patches = [
       ],
       [
         "        for (let index = 0; index < lines.length; index++) {\n          context.fillText(\n            lines[index],\n            horizontalOffset,\n            index * lineHeightPx + verticalOffset\n          );\n        }",
-        `        for (let index = 0; index < lines.length; index++) {\n          context.fillText(\n            lines[index],\n            horizontalOffset,\n            index * lineHeightPx + verticalOffset\n          );\n          ${STRIKE_DEV}\n        }`,
+        LINES_DEV,
+      ],
+      [
+        "var refreshTextDimensions = (textElement, container, elementsMap, text = textElement.text) => {\n  if (textElement.isDeleted) {\n    return;\n  }",
+        `var refreshTextDimensions = (textElement, container, elementsMap, text = textElement.text) => {\n  if (textElement.isDeleted) {\n    return;\n  }\n  {\n    const __x = ${MIXED_CALL("textElement", "text", "container ? getBoundTextMaxWidth(container, textElement) : textElement.autoResize ? Infinity : textElement.width", "{ font: getFontString, wrap: wrapText, measure: measureText }")};\n    if (__x) return __x;\n  }`,
+      ],
+      [
+        "  const metrics = measureText(\n    boundTextUpdates.text,\n    getFontString(textElement),\n    textElement.lineHeight\n  );",
+        `  let metrics = measureText(\n    boundTextUpdates.text,\n    getFontString(textElement),\n    textElement.lineHeight\n  );\n  {\n    const __x = ${MIXED_CALL("textElement", "textElement.originalText", "container ? getBoundTextMaxWidth(container, textElement) : textElement.autoResize ? Infinity : textElement.width", "{ font: getFontString, wrap: wrapText, measure: measureText }")};\n    if (__x) {\n      boundTextUpdates.text = __x.text;\n      metrics = { width: __x.width, height: __x.height };\n      boundTextUpdates.customData = __x.customData;\n      if (__x.fontSize) boundTextUpdates.fontSize = __x.fontSize;\n    }\n  }`,
+      ],
+      [
+        "      const metrics = measureText(\n        text,\n        getFontString(textElement),\n        textElement.lineHeight\n      );\n      nextHeight = metrics.height;\n      nextWidth = metrics.width;",
+        `      const metrics = measureText(\n        text,\n        getFontString(textElement),\n        textElement.lineHeight\n      );\n      nextHeight = metrics.height;\n      nextWidth = metrics.width;\n      const __x = ${MIXED_CALL("textElement", "textElement.originalText", "maxWidth", "{ font: getFontString, wrap: wrapText, measure: measureText }")};\n      if (__x) {\n        text = __x.text;\n        nextHeight = __x.height;\n        nextWidth = __x.width;\n        mutateElement(textElement, { customData: __x.customData });\n      }`,
+      ],
+      [
+        '          text.setAttribute("x", `${horizontalOffset}`);\n          text.setAttribute("y", `${i * lineHeightPx + verticalOffset}`);\n          text.setAttribute("font-family", getFontFamilyString(element));\n          text.setAttribute("font-size", `${element.fontSize}px`);',
+        '          const __ls = element.customData?.lineSizes;\n          const __mixed = Array.isArray(__ls) && __ls.length === lines.length;\n          const __fs = __mixed ? __ls[i] : element.fontSize;\n          const __y = __mixed ? __ls.slice(0, i).reduce((sum, f) => sum + lineHeightPx * f / element.fontSize, 0) : i * lineHeightPx;\n          text.setAttribute("x", `${horizontalOffset}`);\n          text.setAttribute("y", `${__y + verticalOffset * __fs / element.fontSize}`);\n          text.setAttribute("font-family", getFontFamilyString(element));\n          text.setAttribute("font-size", `${__fs}px`);\n          if (element.customData?.bold) text.setAttribute("font-weight", "bold");',
       ],
       ["var transformHandleSizes = {\n  mouse: 8,", "var transformHandleSizes = {\n  mouse: 10,"],
       [
@@ -145,6 +204,10 @@ const patches = [
         `  context.strokeStyle = "${BLUE}";\n  context.setLineDash([]);\n  context.fillStyle = "rgba(255, 255, 255, 0.9)";\n  if (isSelected) {\n    context.fillStyle = "${BLUE_FILL}";\n  } else if (isPhantomPoint) {\n    context.fillStyle = "${BLUE_SOFT}";\n  }`,
       ],
       ["rgba(105, 101, 219, 0.4)", BLUE_HIGHLIGHT],
+      [
+        '  const editable = document.createElement("textarea");\n  editable.dir = "auto";',
+        '  const editable = globalThis.__mfaCreateEditor ? globalThis.__mfaCreateEditor(element) : document.createElement("textarea");\n  editable.dir = "auto";',
+      ],
     ],
   },
 ];

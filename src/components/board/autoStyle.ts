@@ -76,6 +76,26 @@ export function useAutoStyles(api: ExcalidrawImperativeAPI | null): void {
             patches.set(el.id, container ? { ...sized, ...placeLabel({ ...m, ...sized } as TextLike, container).text } : sized);
             continue;
           }
+          // Mixed sizes whose line list no longer matches the drawn lines (a change
+          // Excalidraw made on its own): lay the text out again.
+          const lineSizes = el.customData?.lineSizes;
+          if (
+            Array.isArray(el.customData?.paraSizes) &&
+            !(Array.isArray(lineSizes) && lineSizes.length === (el as unknown as TextLike).text.split("\n").length)
+          ) {
+            const t = el as unknown as TextLike;
+            const [measured] = restoreElements(
+              [{ ...el, text: t.originalText } as ExcalidrawElement, ...(container ? [container] : [])],
+              null,
+              { refreshDimensions: true, repairBindings: true },
+            );
+            const m = measured as unknown as TextLike;
+            if (Number.isFinite(m.height) && m.height > 0) {
+              const sized = { text: m.text, width: m.width, height: m.height, fontSize: m.fontSize, customData: m.customData };
+              patches.set(el.id, container ? { ...sized, ...placeLabel({ ...m } as TextLike, container).text } : sized);
+              continue;
+            }
+          }
         }
         if (el.type === "text" && el.containerId) {
           const container = byId.get(el.containerId);

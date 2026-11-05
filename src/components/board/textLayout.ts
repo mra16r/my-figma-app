@@ -7,6 +7,7 @@ export type TextLike = ExcalidrawElement & {
   verticalAlign: string;
   lineHeight: number;
   text: string;
+  originalText: string;
 };
 type Patch = Record<string, unknown>;
 

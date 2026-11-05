@@ -38,6 +38,7 @@ import {
   StrikeIcon,
 } from "./icons";
 import { canConvert, convertShapes, SHAPE_LABELS, SHAPES, shapeOf, type ShapeKind } from "./shapes";
+import { activeRichEditor, paragraphSizes, withoutSizes } from "./richText";
 import { INTER_FONT, placeLabel, type TextLike } from "./textLayout";
 import { SHAPE_ICONS } from "./Toolbar";
 
@@ -118,13 +119,13 @@ function update(
   patchSelected: ((el: ExcalidrawElement) => Patch | null) | null,
   patchText?: (el: ExcalidrawElement) => Patch | null,
 ) {
-  const selectedIds = api.getAppState().selectedElementIds;
+  const selectedIds = targetIds(api);
   const all = api.getSceneElementsIncludingDeleted();
   const remeasure: ExcalidrawElement[] = [];
   let next = all.map((el) => {
     let patch: Patch | null = null;
-    if (selectedIds[el.id] && patchSelected) patch = patchSelected(el);
     const isLabel = el.type === "text" && el.containerId && selectedIds[el.containerId];
+    if (selectedIds[el.id] && patchSelected && !isLabel) patch = patchSelected(el);
     if (!patch && patchText && el.type === "text" && (selectedIds[el.id] || isLabel)) patch = patchText(el);
     if (!patch) return el;
     const resizes = ["fontSize", "fontFamily", "lineHeight", "textAlign", "customData", "originalText"].some((k) => k in patch);
@@ -151,8 +152,9 @@ function update(
     const patches = new Map<string, Patch>();
     for (const t of refreshed) {
       if (t.type !== "text") continue;
-      const { width, height, text: wrapped } = t as TextLike & { text: string };
-      const patch: Patch = { width, height, text: wrapped };
+      const { width, height, text: wrapped, fontSize, customData } = t as TextLike & { text: string };
+      // (customData carries the size of each line when the text has mixed sizes)
+      const patch: Patch = { width, height, text: wrapped, fontSize, customData };
       // …and put labels back in place inside their shape (growing it if needed).
       const container = t.containerId ? byId.get(t.containerId) : undefined;
       if (container) {
@@ -170,6 +172,18 @@ function update(
   api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
 }
 
+/** What the toolbar acts on: the selection, or the text being typed (and its shape). */
+function targetIds(api: ExcalidrawImperativeAPI): Record<string, true> {
+  const s = api.getAppState();
+  const ids = { ...(s.selectedElementIds as Record<string, true>) };
+  const editing = s.editingTextElement as (ExcalidrawElement & { containerId?: string | null }) | null;
+  if (editing) {
+    ids[editing.id] = true;
+    if (editing.containerId) ids[editing.containerId] = true;
+  }
+  return ids;
+}
+
 const GAP = 36; // between the selection and the toolbar
 const HEIGHT = 40;
 const EDGE = 8;
@@ -185,22 +199,28 @@ export function SelectionToolbar({ api }: { api: ExcalidrawImperativeAPI }) {
   useEffect(() => {
     const check = () => {
       const s = api.getAppState();
-      const ids = Object.keys(s.selectedElementIds);
+      const ids = targetIds(api);
+      const editing = !!s.editingTextElement;
       let key = "";
-      if (ids.length && !dragging.current && s.activeTool.type === "selection" && !s.editingTextElement) {
+      // Shown while typing too, like FigJam (the text tool stays picked while typing new text).
+      if (Object.keys(ids).length && !dragging.current && (s.activeTool.type === "selection" || editing)) {
         const versions = api
           .getSceneElements()
-          .filter((el) => s.selectedElementIds[el.id] || (el.type === "text" && el.containerId && s.selectedElementIds[el.containerId]))
+          .filter((el) => ids[el.id] || (el.type === "text" && el.containerId && ids[el.containerId]))
           .map((el) => `${el.id}:${el.version}`)
           .join(",");
-        key = `${versions}|${s.scrollX}|${s.scrollY}|${s.zoom.value}|${s.width}|${s.height}`;
+        // While typing, the size shown follows the selected lines.
+        const sizes = editing ? (activeRichEditor()?.selectedSizes().join("/") ?? "") : "";
+        key = `${versions}|${sizes}|${s.scrollX}|${s.scrollY}|${s.zoom.value}|${s.width}|${s.height}`;
       }
       if (key !== lastKey.current) {
         lastKey.current = key;
         rerender();
       }
     };
+    document.addEventListener("selectionchange", check);
     const offs = [
+      () => document.removeEventListener("selectionchange", check),
       api.onChange(check),
       api.onScrollChange(check),
       api.onPointerDown(() => {
@@ -227,9 +247,12 @@ export function SelectionToolbar({ api }: { api: ExcalidrawImperativeAPI }) {
 
   const s = api.getAppState();
   const elements = api.getSceneElements();
-  const selected = elements.filter((el) => s.selectedElementIds[el.id]);
+  const ids = targetIds(api);
+  const isLabel = (el: ExcalidrawElement) => el.type === "text" && !!el.containerId && !!ids[el.containerId];
+  const selected = elements.filter((el) => ids[el.id] && !isLabel(el));
   if (!selected.length) return null;
-  const labels = elements.filter((el) => el.type === "text" && el.containerId && s.selectedElementIds[el.containerId]);
+  const labels = elements.filter(isLabel);
+  const editor = s.editingTextElement ? activeRichEditor() : null;
   const kinds = new Set(selected.map(kindOf));
   const only = (...k: Kind[]) => [...kinds].every((x) => k.includes(x));
 
@@ -335,7 +358,11 @@ export function SelectionToolbar({ api }: { api: ExcalidrawImperativeAPI }) {
   }
 
   if (text && only("text", "sticky", "shape")) {
-    const size = FONT_SIZES.find((f) => f.value === text.fontSize);
+    // Sizes in play: of the selected lines while typing, of the whole text otherwise.
+    const inPlay = editor ? editor.selectedSizes() : [...new Set(paragraphSizes(text) ?? [text.fontSize])];
+    const mixed = inPlay.length > 1;
+    const size = FONT_SIZES.find((f) => f.value === inPlay[0]);
+    const sizeLabel = mixed ? "Mixed sizes" : (size?.label ?? `${Math.round(inPlay[0])} px`);
     const font = FONTS.find((f) => f.value === text.fontFamily);
     groups.push([
       <Dropdown
@@ -358,16 +385,19 @@ export function SelectionToolbar({ api }: { api: ExcalidrawImperativeAPI }) {
         side={side}
         label="Font size"
         wide
-        display={<span className="fx-st-text">{size?.label ?? `${Math.round(text.fontSize)} px`}</span>}
+        display={<span className="fx-st-text">{sizeLabel}</span>}
         entries={FONT_SIZES.map((f) => ({
           label: f.label,
           labelStyle: f.preview,
-          checked: text.fontSize === f.value,
+          checked: !mixed && inPlay[0] === f.value,
           onSelect: () => {
             const font = FONTS.find((x) => x.value === text.fontFamily);
-            void (font ? ensureFont(font.css, font.weight) : Promise.resolve()).then(() =>
-              update(api, null, () => ({ fontSize: f.value })),
-            );
+            void (font ? ensureFont(font.css, font.weight) : Promise.resolve()).then(() => {
+              // While typing: just the selected lines (like FigJam). Otherwise: all of it.
+              const typing = activeRichEditor();
+              if (typing) typing.setSelectedSize(f.value);
+              else update(api, null, (el) => ({ fontSize: f.value, customData: withoutSizes(el.customData) }));
+            });
           },
         }))}
       />,
