@@ -25,9 +25,15 @@ export type DriveFile = {
   parents?: string[];
   appProperties?: Record<string, string>;
   trashed?: boolean;
+  /** True for items trashed directly (not just because their folder was). */
+  explicitlyTrashed?: boolean;
+  /** Storage the file counts against your Google quota, in bytes (as text). */
+  quotaBytesUsed?: string;
 };
 
-const FILE_FIELDS = "id,name,mimeType,createdTime,modifiedTime,parents,appProperties";
+const FILE_FIELDS = "id,name,mimeType,createdTime,modifiedTime,parents,appProperties,quotaBytesUsed";
+
+export const fileBytes = (f: DriveFile) => Number(f.quotaBytesUsed ?? 0) || 0;
 
 async function driveFetch(url: string, init: RequestInit = {}): Promise<Response> {
   const token = getValidToken();
@@ -61,6 +67,44 @@ export async function getUser(): Promise<{ displayName: string; emailAddress: st
   const res = await driveFetch(`${API}/about?fields=user(displayName,emailAddress)`);
   const body = await res.json();
   return body.user;
+}
+
+export type StorageQuota = {
+  /** Total space of the Google account in bytes (missing = unlimited). */
+  limit?: number;
+  /** Space used across Gmail, Drive and Photos. */
+  usage: number;
+};
+
+export async function getStorageQuota(): Promise<StorageQuota> {
+  const res = await driveFetch(`${API}/about?fields=storageQuota(limit,usage)`);
+  const { storageQuota: q } = await res.json();
+  return { limit: q?.limit ? Number(q.limit) : undefined, usage: Number(q?.usage ?? 0) };
+}
+
+/** Every trashed file this app created (including ones inside trashed folders). */
+export async function listTrashedFiles(): Promise<DriveFile[]> {
+  const files: DriveFile[] = [];
+  let pageToken: string | undefined;
+  do {
+    const params = new URLSearchParams({
+      q: "trashed = true",
+      fields: `nextPageToken,files(${FILE_FIELDS},trashed,explicitlyTrashed)`,
+      pageSize: "1000",
+      spaces: "drive",
+    });
+    if (pageToken) params.set("pageToken", pageToken);
+    const res = await driveFetch(`${API}/files?${params}`);
+    const body = await res.json();
+    files.push(...(body.files as DriveFile[]));
+    pageToken = body.nextPageToken;
+  } while (pageToken);
+  return files;
+}
+
+/** Deletes a file for good (a folder takes everything inside with it). */
+export async function deleteFile(fileId: string): Promise<void> {
+  await driveFetch(`${API}/files/${encodeURIComponent(fileId)}`, { method: "DELETE" });
 }
 
 /** Every file this app can see (only ones it created), across all pages. */

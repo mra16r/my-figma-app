@@ -2,9 +2,11 @@ import { APP_FOLDER_NAME } from "../config";
 import {
   createFile,
   createFolder,
+  deleteFile,
+  fileBytes,
   getFile,
   listAllFiles,
-  trashFile,
+  listTrashedFiles,
   updateMetadata,
   type DriveFile,
 } from "../google/drive";
@@ -41,7 +43,14 @@ export type Library = {
   thumbs: Map<string, Thumb>;
   /** boardId → Drive ids of its pasted images. */
   images: Map<string, string[]>;
+  /** Bytes used in Drive by the app's files. */
+  usage: Usage;
 };
+
+/** Bytes used in Google Drive, by kind. Trashed files still count until deleted. */
+export type Usage = { boards: number; images: number; previews: number; trash: number };
+
+export const totalUsage = (u: Usage) => u.boards + u.images + u.previews + u.trash;
 
 const BOARD_EXT = ".excalidraw";
 const role = (f: DriveFile) => f.appProperties?.role;
@@ -67,7 +76,8 @@ export function loadLibrary(): Promise<Library> {
 }
 
 async function fetchLibrary(): Promise<Library> {
-  const files = await listAllFiles();
+  const [files, trashed] = await Promise.all([listAllFiles(), listTrashedFiles()]);
+  const trashBytes = trashed.reduce((sum, f) => sum + fileBytes(f), 0);
 
   let root = files
     .filter((f) => role(f) === "root")
@@ -92,16 +102,20 @@ async function fetchLibrary(): Promise<Library> {
     }
   }
 
-  return buildLibrary(root.id, files);
+  return buildLibrary(root.id, files, trashBytes);
 }
 
-function buildLibrary(rootId: string, files: DriveFile[]): Library {
+function buildLibrary(rootId: string, files: DriveFile[], trashBytes: number): Library {
   const nodes = new Map<string, LibraryNode>();
   const thumbs = new Map<string, Thumb>();
   const images = new Map<string, string[]>();
+  const usage: Usage = { boards: 0, images: 0, previews: 0, trash: trashBytes };
 
   for (const f of files) {
     const r = role(f);
+    if (r === "board") usage.boards += fileBytes(f);
+    else if (r === "image") usage.images += fileBytes(f);
+    else if (r === "thumb") usage.previews += fileBytes(f);
     const boardId = f.appProperties?.board;
     if (r === "thumb" && boardId) {
       thumbs.set(boardId, { id: f.id, modifiedTime: f.modifiedTime ?? "" });
@@ -148,7 +162,7 @@ function buildLibrary(rootId: string, files: DriveFile[]): Library {
     .sort((a, b) => a.createdTime.localeCompare(b.createdTime));
 
   rememberThumbnails(thumbs);
-  return { rootId, nodes, children, workspaces, thumbs, images };
+  return { rootId, nodes, children, workspaces, thumbs, images, usage };
 }
 
 /** Workspace → … → node, for breadcrumbs. */
@@ -221,9 +235,14 @@ export async function moveNode(node: LibraryNode, toParentId: string): Promise<v
   await updateMetadata(node.id, {}, { from: node.parentId, to: toParentId });
 }
 
-/** Moves a node (and everything inside it) to Drive's trash. */
+/**
+ * Moves a node (and everything inside it) to Drive's trash. Drive deletes
+ * trashed items for good after 30 days. The date and what went along with it
+ * are noted on the files, so the app's Trash can show and restore them.
+ */
 export async function trashNode(lib: Library, node: LibraryNode): Promise<void> {
-  await trashFile(node.id);
+  const trashedAt = new Date().toISOString();
+  await updateMetadata(node.id, { trashed: true, appProperties: { trashedAt } });
   // The previews and images of those boards go to the trash with them.
   const boards = [node, ...descendants(lib, node.id)].filter((n) => n.kind === "board");
   const extras: string[] = [];
@@ -233,5 +252,107 @@ export async function trashNode(lib: Library, node: LibraryNode): Promise<void> 
     extras.push(...(lib.images.get(b.id) ?? []));
     forgetThumbnail(b.id);
   }
-  await Promise.allSettled(extras.map((id) => trashFile(id)));
+  await Promise.allSettled(
+    extras.map((id) => updateMetadata(id, { trashed: true, appProperties: { trashedAt, trashedWith: node.id } })),
+  );
+}
+
+// ---- Trash -----------------------------------------------------------------
+
+export const TRASH_DAYS = 30;
+
+export type TrashItem = {
+  id: string;
+  name: string;
+  kind: NodeKind;
+  parentId: string | null;
+  /** When it was trashed from this app (unknown for items trashed in Drive). */
+  trashedAt?: string;
+  /** Bytes it frees when deleted, including what's inside and its images. */
+  bytes: number;
+  /** Previews and images that went to the trash with it. */
+  extraIds: string[];
+};
+
+export type Trash = {
+  items: TrashItem[];
+  /** Every trashed app file, for restoring and deleting. */
+  files: DriveFile[];
+  /** Total bytes the app's trashed files still take. */
+  bytes: number;
+};
+
+export async function loadTrash(): Promise<Trash> {
+  const files = await listTrashedFiles();
+  const byId = new Map(files.map((f) => [f.id, f]));
+  const kinds = new Set(["workspace", "folder", "board"]);
+
+  /** Trashed files inside `id` (any depth), plus `id` itself. */
+  const within = (id: string): DriveFile[] => {
+    const out: DriveFile[] = [];
+    for (const f of files) {
+      let cur: DriveFile | undefined = f;
+      for (let depth = 0; cur && depth < 50; depth++) {
+        if (cur.id === id) {
+          out.push(f);
+          break;
+        }
+        cur = cur.parents?.[0] ? byId.get(cur.parents[0]) : undefined;
+      }
+    }
+    return out;
+  };
+
+  const items: TrashItem[] = files
+    .filter((f) => f.explicitlyTrashed && kinds.has(role(f) ?? ""))
+    .map((f) => {
+      const inside = within(f.id);
+      const boards = new Set(inside.filter((x) => role(x) === "board").map((x) => x.id));
+      // Tagged when trashed from this app; older items are matched by board.
+      const extras = files.filter(
+        (x) =>
+          x.appProperties?.trashedWith === f.id ||
+          (!x.appProperties?.trashedWith && role(x) !== "board" && boards.has(x.appProperties?.board ?? "")),
+      );
+      return {
+        id: f.id,
+        name: displayName(f),
+        kind: role(f) as NodeKind,
+        parentId: f.parents?.[0] ?? null,
+        trashedAt: f.appProperties?.trashedAt,
+        bytes: [...inside, ...extras].reduce((sum, x) => sum + fileBytes(x), 0),
+        extraIds: extras.map((x) => x.id),
+      };
+    })
+    .sort((a, b) => (b.trashedAt ?? "").localeCompare(a.trashedAt ?? ""));
+
+  return { items, files, bytes: files.reduce((sum, f) => sum + fileBytes(f), 0) };
+}
+
+/** Days left before Drive deletes it for good (undefined if unknown). */
+export function daysLeft(item: TrashItem): number | undefined {
+  if (!item.trashedAt) return undefined;
+  const ms = Date.parse(item.trashedAt) + TRASH_DAYS * 86_400_000 - Date.now();
+  return Math.max(0, Math.ceil(ms / 86_400_000));
+}
+
+/** Puts an item back where it was (or in a workspace if that place is gone). */
+export async function restoreItem(lib: Library, item: TrashItem): Promise<void> {
+  const clear = { trashedAt: null, trashedWith: null };
+  const parentAlive = item.parentId === lib.rootId || (!!item.parentId && lib.nodes.has(item.parentId));
+  const fallback = item.kind === "workspace" ? lib.rootId : lib.workspaces[0]?.id;
+  const move = !parentAlive && item.parentId && fallback ? { from: item.parentId, to: fallback } : undefined;
+  await updateMetadata(item.id, { trashed: false, appProperties: clear }, move);
+  await Promise.allSettled(item.extraIds.map((id) => updateMetadata(id, { trashed: false, appProperties: clear })));
+}
+
+/** Deletes an item, everything inside it and its images for good. */
+export async function deleteForever(item: TrashItem): Promise<void> {
+  await deleteFile(item.id);
+  await Promise.allSettled(item.extraIds.map((id) => deleteFile(id)));
+}
+
+/** Deletes everything in the app's trash for good. */
+export async function emptyTrash(trash: Trash): Promise<void> {
+  await Promise.allSettled(trash.files.filter((f) => f.explicitlyTrashed).map((f) => deleteFile(f.id)));
 }

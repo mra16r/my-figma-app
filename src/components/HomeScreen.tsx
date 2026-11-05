@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { goToBoard, goToFolder } from "../router";
+import { formatBytes } from "../format";
+import { goToBoard, goToFolder, goToTrash } from "../router";
 import { thumbnailUrl } from "../storage/boards";
 import {
   countItems,
@@ -9,17 +10,22 @@ import {
   moveNode,
   pathTo,
   renameNode,
+  totalUsage,
   trashNode,
   type Library,
   type LibraryNode,
   type Thumb,
 } from "../storage/library";
 import { ConfirmDialog, MoveDialog, NameDialog } from "./Dialogs";
-import { BoardIcon, ChevronIcon, DotsIcon, FolderIcon, PlusIcon, WorkspaceIcon } from "./icons";
+import { BoardIcon, ChevronIcon, CloudIcon, DotsIcon, FolderIcon, PlusIcon, TrashIcon, WorkspaceIcon } from "./icons";
+import StorageDialog from "./StorageDialog";
+import TrashView from "./TrashView";
 
 type Props = {
   library: Library;
   containerId: string;
+  /** Show a folder's content, or the trash. */
+  section: "folder" | "trash";
   email: string;
   onRefresh: () => Promise<void>;
   onSignOut: () => void;
@@ -34,17 +40,19 @@ type Dialog =
   | { kind: "move"; node: LibraryNode }
   | { kind: "trash"; node: LibraryNode };
 
-export default function HomeScreen({ library, containerId, email, onRefresh, onSignOut, onAuthExpired }: Props) {
+export default function HomeScreen({ library, containerId, section, email, onRefresh, onSignOut, onAuthExpired }: Props) {
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [showStorage, setShowStorage] = useState(false);
   const container = library.nodes.get(containerId)!;
   const path = pathTo(library, containerId);
-  const workspaceId = path[0]?.id;
+  const workspaceId = section === "folder" ? path[0]?.id : undefined;
   const items = library.children.get(containerId) ?? [];
   const onlyOneWorkspace = library.workspaces.length <= 1;
+  const usedBytes = totalUsage(library.usage);
 
   useEffect(() => {
-    document.title = `${container.name} – My Figma App`;
-  }, [container.name]);
+    if (section === "folder") document.title = `${container.name} – My Figma App`;
+  }, [container.name, section]);
 
   const close = () => setDialog(null);
   const common = { onClose: close, onAuthExpired };
@@ -94,6 +102,20 @@ export default function HomeScreen({ library, containerId, email, onRefresh, onS
           ))}
         </nav>
 
+        <div className="sidebar-extra">
+          <div className="workspace-row" data-active={section === "trash"}>
+            <button type="button" className="workspace-link" onClick={goToTrash}>
+              <TrashIcon size={16} />
+              <span>Trash</span>
+            </button>
+          </div>
+          <button type="button" className="storage-meter" onClick={() => setShowStorage(true)} title="See storage details">
+            <CloudIcon size={16} />
+            <span>Storage</span>
+            <span className="storage-meter-value">{formatBytes(usedBytes)}</span>
+          </button>
+        </div>
+
         <div className="sidebar-footer">
           <span className="email" title={email}>
             {email}
@@ -105,6 +127,10 @@ export default function HomeScreen({ library, containerId, email, onRefresh, onS
       </aside>
 
       <main className="content">
+        {section === "trash" ? (
+          <TrashView library={library} onRefresh={onRefresh} onAuthExpired={onAuthExpired} />
+        ) : (
+        <>
         <header className="content-header">
           <nav className="breadcrumbs" aria-label="Location">
             {path.map((node, i) => (
@@ -164,7 +190,13 @@ export default function HomeScreen({ library, containerId, email, onRefresh, onS
             )}
           </div>
         )}
+        </>
+        )}
       </main>
+
+      {showStorage && (
+        <StorageDialog usage={library.usage} onClose={() => setShowStorage(false)} onAuthExpired={onAuthExpired} />
+      )}
 
       {dialog?.kind === "newBoard" && (
         <NameDialog

@@ -650,8 +650,255 @@ button.link {
   background: var(--button-hover-bg, #f0f0f5);
 }
 
+/* ---- Sidebar: trash and storage ---- */
+.sidebar-extra {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.storage-meter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.storage-meter:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.storage-meter-value {
+  margin-left: auto;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Trash page ---- */
+.trash-note {
+  margin: -8px 0 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.trash-error {
+  margin-bottom: 12px;
+}
+
+.trash-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.trash-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+}
+
+.trash-row + .trash-row {
+  border-top: 1px solid var(--border);
+}
+
+.trash-row[data-busy] {
+  opacity: 0.6;
+}
+
+.trash-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--preview-bg);
+  color: var(--muted);
+  flex: none;
+}
+
+.trash-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.trash-name {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trash-sub {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trash-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.trash-meta [data-soon] {
+  color: var(--danger);
+}
+
+.trash-size {
+  font-variant-numeric: tabular-nums;
+}
+
+.trash-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+}
+
+button.small {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+button.danger-link {
+  color: var(--danger);
+}
+
+/* ---- Storage dialog ---- */
+.storage {
+  --seg-boards: #9747ff;
+  --seg-images: #1ab7f5;
+  --seg-previews: #14c98b;
+  --seg-trash: #ff5a36;
+  --seg-app: #9747ff;
+  --seg-other: #c9c9d1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.storage-total {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.storage-total strong {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.storage-total span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.storage-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.storage-rows li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.storage-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: none;
+}
+
+.storage-value {
+  margin-left: auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.storage-account {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.storage-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--preview-bg);
+}
+
+.storage-bar-app {
+  background: var(--seg-app);
+}
+
+.storage-bar-other {
+  background: var(--seg-other);
+}
+
+.storage-legend {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.storage-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.storage p {
+  margin: 0;
+  line-height: 1.5;
+}
+
 /* ---- Phone width ---- */
 @media (max-width: 720px) {
+  .sidebar-extra {
+    order: 5;
+    flex-direction: row;
+    flex-basis: 100%;
+    padding: 0;
+    border-top: 0;
+  }
+
   .home {
     grid-template-columns: 1fr;
     grid-template-rows: auto 1fr;

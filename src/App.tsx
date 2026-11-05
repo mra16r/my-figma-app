@@ -130,7 +130,8 @@ export default function App() {
     const node = id ? library.nodes.get(id) : undefined;
     return !!node && node.kind !== "board";
   };
-  const containerId = [route.containerId, readLastContainer()].find(isContainer) ?? library.workspaces[0].id;
+  const fromUrl = route.kind === "home" ? route.containerId : undefined;
+  const containerId = [fromUrl, readLastContainer()].find(isContainer) ?? library.workspaces[0].id;
   try {
     localStorage.setItem(LAST_CONTAINER_KEY, containerId);
   } catch {
@@ -141,6 +142,7 @@ export default function App() {
     <HomeScreen
       library={library}
       containerId={containerId}
+      section={route.kind === "trash" ? "trash" : "folder"}
       email={session.email}
       onRefresh={refresh}
       onSignOut={handleSignOut}

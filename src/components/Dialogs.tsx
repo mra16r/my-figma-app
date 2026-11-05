@@ -6,7 +6,7 @@ import { FolderIcon, WorkspaceIcon } from "./icons";
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
-function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
+export function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);

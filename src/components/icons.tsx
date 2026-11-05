@@ -56,6 +56,18 @@ export const ChevronIcon = ({ size }: IconProps) => (
   </svg>
 );
 
+export const TrashIcon = ({ size }: IconProps) => (
+  <svg {...base(size)}>
+    <path d="M4 7h16M9.5 7V4.5h5V7M6.5 7l.9 12.5h9.2L17.5 7M10 11v5M14 11v5" />
+  </svg>
+);
+
+export const CloudIcon = ({ size }: IconProps) => (
+  <svg {...base(size)}>
+    <path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.6 9.1 4.75 4.75 0 0 0 7 18.5z" />
+  </svg>
+);
+
 export const BackIcon = ({ size }: IconProps) => (
   <svg {...base(size)}>
     <path d="M15 6l-6 6 6 6" />

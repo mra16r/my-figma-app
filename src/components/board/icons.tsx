@@ -14,10 +14,13 @@ const svg = (size = 24) => ({
   "aria-hidden": true,
 });
 
+// Same mark as public/favicon.svg.
 export const AppLogo = ({ size = 20 }: P) => (
   <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden>
-    <rect x="3" y="3" width="11" height="11" rx="2.5" fill="#7c5cff" />
-    <circle cx="15.5" cy="15.5" r="5.5" fill="#ffc94d" />
+    <rect x="2" y="2" width="9.5" height="9.5" rx="2.6" fill="#ff5a36" />
+    <circle cx="17.25" cy="6.75" r="4.75" fill="#a66bff" />
+    <circle cx="6.75" cy="17.25" r="4.75" fill="#29b6f6" />
+    <rect x="12.5" y="12.5" width="9.5" height="9.5" rx="2.6" fill="#14c98b" />
   </svg>
 );
 

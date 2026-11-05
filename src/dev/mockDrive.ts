@@ -65,6 +65,7 @@ function isTrashed(f: MockFile, depth = 0): boolean {
 
 function matches(f: MockFile, q: string): boolean {
   if (q.includes("trashed = false") && isTrashed(f)) return false;
+  if (q.includes("trashed = true") && !isTrashed(f)) return false;
   for (const m of q.matchAll(/appProperties has \{ key='([^']*)' and value='([^']*)' \}/g)) {
     if (f.appProperties?.[m[1]] !== m[2]) return false;
   }
@@ -74,9 +75,21 @@ function matches(f: MockFile, q: string): boolean {
   return true;
 }
 
+/** Approximate stored size of a data URL, like Drive's quotaBytesUsed. */
+function sizeOf(f: MockFile): number {
+  if (!f.content) return 0;
+  const data = f.content.slice(f.content.indexOf(",") + 1);
+  return f.content.includes(";base64,") ? Math.floor((data.length * 3) / 4) : decodeURIComponent(data).length;
+}
+
 function meta(f: MockFile) {
-  const { content: _content, ...rest } = f;
-  return rest;
+  const { content: _content, trashed, ...rest } = f;
+  return { ...rest, trashed: isTrashed(f), explicitlyTrashed: trashed, quotaBytesUsed: String(sizeOf(f)) };
+}
+
+function deleteWithChildren(id: string) {
+  files.delete(id);
+  for (const f of [...files.values()]) if (f.parents?.includes(id)) deleteWithChildren(f.id);
 }
 
 const json = (body: unknown, status = 200) =>
@@ -112,7 +125,11 @@ async function handle(url: URL, init: RequestInit, realFetch: typeof fetch): Pro
   const fileId = decodeURIComponent(path.match(/\/files\/([^/]+)$/)?.[1] ?? "");
 
   if (path.endsWith("/drive/v3/about")) {
-    return json({ user: { displayName: "Test User", emailAddress: "test@example.com" } });
+    const appBytes = [...files.values()].reduce((sum, f) => sum + sizeOf(f), 0);
+    return json({
+      user: { displayName: "Test User", emailAddress: "test@example.com" },
+      storageQuota: { limit: String(15 * 1024 ** 3), usage: String(3.2 * 1024 ** 3 + appBytes) },
+    });
   }
 
   if (path === "/drive/v3/files" && method === "GET") {
@@ -156,8 +173,24 @@ async function handle(url: URL, init: RequestInit, realFetch: typeof fetch): Pro
     return json(meta(f));
   }
 
+  if (method === "DELETE") {
+    deleteWithChildren(f.id);
+    persist();
+    return new Response(null, { status: 204 });
+  }
+
   if (method === "PATCH") {
-    Object.assign(f, JSON.parse((init.body as string) || "{}"));
+    // Like Drive: appProperties merge, and a null value removes a key.
+    const { appProperties, ...rest } = JSON.parse((init.body as string) || "{}");
+    Object.assign(f, rest);
+    if (appProperties) {
+      const merged: Record<string, string> = { ...(f.appProperties ?? {}) };
+      for (const [k, v] of Object.entries(appProperties)) {
+        if (v === null) delete merged[k];
+        else merged[k] = String(v);
+      }
+      f.appProperties = merged;
+    }
     const add = url.searchParams.get("addParents");
     const remove = url.searchParams.get("removeParents");
     if (add || remove) f.parents = [...(f.parents ?? []).filter((p) => p !== remove), ...(add ? [add] : [])];
