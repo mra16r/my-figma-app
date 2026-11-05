@@ -5,6 +5,10 @@
 //  4. Selection like FigJam: a 2px outline on the shape's edge (not 4px outside it)
 //     and bigger handles (10px, 1.5px border) centered on its corners.
 //  5. Connector points in FigJam blue instead of Excalidraw purple.
+//  6. Inter (FigJam's font, already loaded by the page) as font family 11,
+//     with FigJam's 150% line height.
+//  7. Text height reads the size from the "16px" part of the font text, so a
+//     weight in front of it ("bold 16px") doesn't break it.
 // Each change is an exact text replacement; if Excalidraw changes, this stops
 // with a clear message instead of silently doing nothing. Changes already in
 // place are skipped, so new ones can be added to an installed copy.
@@ -34,6 +38,16 @@ const BLUE_FILL = "rgba(13, 153, 255, 0.9)";
 const BLUE_SOFT = "rgba(13, 153, 255, 0.5)";
 const BLUE_HIGHLIGHT = "rgba(13, 153, 255, 0.4)";
 
+// Inter: font family 11. Metrics of Inter 4 (the Google Fonts version the page loads).
+const INTER_ID = 11;
+const INTER_METRICS = "unitsPerEm: 2048, ascender: 1984, descender: -494, lineHeight: 1.5";
+// Weight in front of the size when the text is bold. (FigJam uses Inter Medium, but its
+// renderer draws thinner than the browser: Regular here looks the same on screen.)
+const WEIGHT = `\${o.customData?.bold ? "bold " : ""}`;
+const WEIGHT_MIN = `\${o.customData?.bold?"bold ":""}`;
+// The size is the number right before "px".
+const SIZE_OF = (v) => `parseFloat((${v}.match(/([\\d.]+)px/) || [])[1] ?? ${v})`;
+
 const HANDLES_DEV = (width) =>
   `      context.lineWidth = ${width} / appState.zoom.value;\n      if (renderConfig.selectionColor) {\n        context.strokeStyle = renderConfig.selectionColor;\n      }\n      if (key === "rotation") {`;
 const HANDLES_PROD = (width) =>
@@ -46,17 +60,24 @@ const patches = [
       ["excalidrawLibrary:2},Se=5,", "excalidrawLibrary:2},Se=14,"],
       [
         "Ee=({fontSize:e,fontFamily:t})=>`${e}px ${ea({fontFamily:t})}`",
-        'Ee=(o)=>`${o.customData?.bold?"bold ":""}${o.fontSize}px ${ea({fontFamily:o.fontFamily})}`',
+        `Ee=(o)=>\`${WEIGHT_MIN}\${o.fontSize}px \${ea({fontFamily:o.fontFamily})}\``,
       ],
       [
         "for(let U=0;U<s.length;U++)n.fillText(s[U],d,U*c+l);n.restore()",
         `for(let U=0;U<s.length;U++){n.fillText(s[U],d,U*c+l);${STRIKE_PROD}}n.restore()`,
       ],
       ["mouse:8,pen:16,touch:28", "mouse:10,pen:16,touch:28"],
+      ["o=parseFloat(t),i=B6(r,o,n)", `o=${SIZE_OF("t")},i=B6(r,o,n)`],
       [
         "let i=ae(e)?br+8:Ye(e)?0:br;return Ki(C(e,n,!0),e.angle,t,r,o,i,Ye(e)?0:void 0)",
         "let i=ae(e)?br+8:0;return Ki(C(e,n,!0),e.angle,t,r,o,i,ae(e)?void 0:0)",
       ],
+      ['"Comic Shanns":8,"Liberation Sans":9},', `"Comic Shanns":8,"Liberation Sans":9,Inter:${INTER_ID}},`],
+      [
+        "deprecated:!0,local:!0},[Ie.Cascadia]:",
+        `deprecated:!0,local:!0},[Ie.Inter]:{metrics:{${INTER_METRICS.replace(/ /g, "")}},icon:la,local:!0},[Ie.Cascadia]:`,
+      ],
+      ['n("Helvetica",...dc),', 'n("Helvetica",...dc),n("Inter",...dc),'],
     ],
   },
   {
@@ -81,7 +102,7 @@ const patches = [
       ["var BOUND_TEXT_PADDING = 5;", "var BOUND_TEXT_PADDING = 14;"],
       [
         "var getFontString = ({\n  fontSize,\n  fontFamily\n}) => {\n  return `${fontSize}px ${getFontFamilyString({ fontFamily })}`;\n};",
-        'var getFontString = (o) => {\n  return `${o.customData?.bold ? "bold " : ""}${o.fontSize}px ${getFontFamilyString({ fontFamily: o.fontFamily })}`;\n};',
+        `var getFontString = (o) => {\n  return \`${WEIGHT}\${o.fontSize}px \${getFontFamilyString({ fontFamily: o.fontFamily })}\`;\n};`,
       ],
       [
         "        for (let index = 0; index < lines.length; index++) {\n          context.fillText(\n            lines[index],\n            horizontalOffset,\n            index * lineHeightPx + verticalOffset\n          );\n        }",
@@ -89,8 +110,21 @@ const patches = [
       ],
       ["var transformHandleSizes = {\n  mouse: 8,", "var transformHandleSizes = {\n  mouse: 10,"],
       [
+        "  const fontSize = parseFloat(font);\n  const height = getTextHeight(_text, fontSize, lineHeight);",
+        `  const fontSize = ${SIZE_OF("font")};\n  const height = getTextHeight(_text, fontSize, lineHeight);`,
+      ],
+      [
         "  const margin = isLinearElement(element) ? DEFAULT_TRANSFORM_HANDLE_SPACING + 8 : isImageElement(element) ? 0 : DEFAULT_TRANSFORM_HANDLE_SPACING;\n  return getTransformHandlesFromCoords(\n    getElementAbsoluteCoords(element, elementsMap, true),\n    element.angle,\n    zoom,\n    pointerType,\n    omitSides,\n    margin,\n    isImageElement(element) ? 0 : void 0\n  );",
         "  const margin = isLinearElement(element) ? DEFAULT_TRANSFORM_HANDLE_SPACING + 8 : 0;\n  return getTransformHandlesFromCoords(\n    getElementAbsoluteCoords(element, elementsMap, true),\n    element.angle,\n    zoom,\n    pointerType,\n    omitSides,\n    margin,\n    isLinearElement(element) ? void 0 : 0\n  );",
+      ],
+      ['  "Liberation Sans": 9\n};', `  "Liberation Sans": 9,\n  Inter: ${INTER_ID}\n};`],
+      [
+        "    deprecated: true,\n    local: true\n  },\n  [FONT_FAMILY.Cascadia]: {",
+        `    deprecated: true,\n    local: true\n  },\n  [FONT_FAMILY.Inter]: {\n    metrics: { ${INTER_METRICS} },\n    icon: FontFamilyNormalIcon,\n    local: true\n  },\n  [FONT_FAMILY.Cascadia]: {`,
+      ],
+      [
+        '    init("Helvetica", ...HelveticaFontFaces);\n',
+        '    init("Helvetica", ...HelveticaFontFaces);\n    init("Inter", ...HelveticaFontFaces);\n',
       ],
     ],
   },
@@ -121,7 +155,8 @@ for (const { file, edits } of patches) {
   const original = readFileSync(path, "utf8");
   let source = original;
   for (const [find, replace] of edits) {
-    if (source.split(replace).length - 1 === 1 && !source.includes(find)) continue; // already applied
+    // Already applied? (Some replacements keep the original text and add after it.)
+    if (source.includes(replace) && (replace.includes(find) || !source.includes(find))) continue;
     const count = source.split(find).length - 1;
     if (count !== 1) throw new Error(`patch-excalidraw: expected 1 match in ${file}, found ${count}: ${find.slice(0, 60)}…`);
     source = source.replace(find, () => replace);

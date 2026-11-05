@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CaptureUpdateAction,
   Excalidraw,
-  FONT_FAMILY,
   convertToExcalidrawElements,
   exportToBlob,
   exportToSvg,
@@ -41,6 +40,7 @@ import { SectionLayer, withSectionBackgrounds } from "./SectionLayer";
 import { FilePanel, type PageMeta } from "./FilePanel";
 import type { MenuEntry } from "./Menu";
 import { SelectionToolbar } from "./SelectionToolbar";
+import { INTER_FONT } from "./textLayout";
 import { makeTriangle, selectShape } from "./shapes";
 import { selectTool, Toolbar } from "./Toolbar";
 import { getToolStyles, useToolStyles } from "./toolStyles";
@@ -68,7 +68,7 @@ type Props = {
 const DEFAULT_STYLE: Partial<AppState> = {
   viewBackgroundColor: "transparent", // the dot grid shows through
   currentItemRoughness: 0,
-  currentItemFontFamily: FONT_FAMILY["Liberation Sans"],
+  currentItemFontFamily: INTER_FONT as AppState["currentItemFontFamily"], // FigJam's font
   currentItemFontSize: 16,
   currentItemStrokeColor: "#1e1e1e",
   currentItemBackgroundColor: "#ffffff", // filled, so a click anywhere inside selects it

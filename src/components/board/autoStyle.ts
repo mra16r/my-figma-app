@@ -1,7 +1,8 @@
 import { useEffect } from "react";
-import { CaptureUpdateAction, newElementWith } from "@excalidraw/excalidraw";
+import { CaptureUpdateAction, newElementWith, restoreElements } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import { placeLabel, repairText, type TextLike } from "./textLayout";
 
 export const TEXT_DARK = "#1e1e1e";
 export const TEXT_LIGHT = "#ffffff";
@@ -58,6 +59,24 @@ export function useAutoStyles(api: ExcalidrawImperativeAPI | null): void {
 
       for (const el of elements) {
         if (el.isDeleted) continue;
+        if (el.type === "text") {
+          // Text hidden by an earlier bug (a size that isn't a number): measure and place it again.
+          const owner = el.containerId ? byId.get(el.containerId) : undefined;
+          const container = owner && !owner.isDeleted ? owner : undefined;
+          const repair = repairText(el as unknown as TextLike, container);
+          if (repair) {
+            // Measure it for real (works again), then place it inside its shape.
+            const [measured] = restoreElements([{ ...el, ...repair } as ExcalidrawElement], null, {
+              refreshDimensions: true,
+              repairBindings: true,
+            });
+            const m = measured as unknown as TextLike;
+            const ok = Number.isFinite(m.width) && Number.isFinite(m.height) && m.height > 0;
+            const sized = ok ? { ...repair, width: m.width, height: m.height, text: m.text } : repair;
+            patches.set(el.id, container ? { ...sized, ...placeLabel({ ...m, ...sized } as TextLike, container).text } : sized);
+            continue;
+          }
+        }
         if (el.type === "text" && el.containerId) {
           const container = byId.get(el.containerId);
           if (!container || container.isDeleted || container.type === "arrow") continue;

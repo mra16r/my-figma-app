@@ -38,6 +38,7 @@ import {
   StrikeIcon,
 } from "./icons";
 import { canConvert, convertShapes, SHAPE_LABELS, SHAPES, shapeOf, type ShapeKind } from "./shapes";
+import { INTER_FONT, placeLabel, type TextLike } from "./textLayout";
 import { SHAPE_ICONS } from "./Toolbar";
 
 const PEN_WIDTHS = [
@@ -51,26 +52,30 @@ const LINE_WIDTHS = [
   { label: "Thick", value: 8 },
 ];
 
+// FigJam's sizes (and how its menu previews them).
 const FONT_SIZES = [
   { label: "Small", value: 16, preview: { fontSize: 12, lineHeight: "16px" } },
-  { label: "Medium", value: 20, preview: { fontSize: 13, lineHeight: "24px" } },
-  { label: "Large", value: 28, preview: { fontSize: 14, lineHeight: "24px" } },
-  { label: "Extra large", value: 36, preview: { fontSize: 16, lineHeight: "24px" } },
+  { label: "Medium", value: 24, preview: { fontSize: 13, lineHeight: "24px" } },
+  { label: "Large", value: 40, preview: { fontSize: 14, lineHeight: "24px" } },
+  { label: "Extra large", value: 64, preview: { fontSize: 16, lineHeight: "24px" } },
+  { label: "Huge", value: 96, preview: { fontSize: 18, lineHeight: "24px" } },
 ];
 
+// lineHeight: each font's own (as Excalidraw sets it when the font changes).
 const FONTS = [
-  { label: "Simple", value: FONT_FAMILY["Liberation Sans"], css: "Liberation Sans" },
-  { label: "Rounded", value: FONT_FAMILY.Nunito, css: "Nunito" },
-  { label: "Handwritten", value: FONT_FAMILY.Excalifont, css: "Excalifont" },
-  { label: "Comic", value: FONT_FAMILY["Comic Shanns"], css: "Comic Shanns" },
-  { label: "Bookish", value: FONT_FAMILY["Lilita One"], css: "Lilita One" },
-  { label: "Technical", value: FONT_FAMILY.Cascadia, css: "Cascadia" },
+  { label: "Simple", value: INTER_FONT, css: "Inter", weight: undefined as number | undefined, lineHeight: 1.5 },
+  { label: "Rounded", value: FONT_FAMILY.Nunito, css: "Nunito", lineHeight: 1.35 },
+  { label: "Handwritten", value: FONT_FAMILY.Excalifont, css: "Excalifont", lineHeight: 1.25 },
+  { label: "Comic", value: FONT_FAMILY["Comic Shanns"], css: "Comic Shanns", lineHeight: 1.25 },
+  { label: "Bookish", value: FONT_FAMILY["Lilita One"], css: "Lilita One", lineHeight: 1.15 },
+  { label: "Technical", value: FONT_FAMILY.Cascadia, css: "Cascadia", lineHeight: 1.2 },
+  { label: "Classic", value: FONT_FAMILY["Liberation Sans"], css: "Liberation Sans", lineHeight: 1.15 },
 ];
 
 /** Text is measured when it changes, so the font has to be loaded first. */
-async function ensureFont(css: string) {
+async function ensureFont(css: string, weight = 400) {
   try {
-    await Promise.race([document.fonts.load(`20px "${css}"`), new Promise((r) => setTimeout(r, 3000))]);
+    await Promise.race([document.fonts.load(`${weight} 20px "${css}"`), new Promise((r) => setTimeout(r, 3000))]);
   } catch {
     /* measure with whatever is available */
   }
@@ -106,44 +111,6 @@ function kindOf(el: ExcalidrawElement): Kind {
 }
 
 type Patch = Record<string, unknown>;
-type TextLike = ExcalidrawElement & { fontSize: number; fontFamily: number; textAlign: string; verticalAlign: string };
-
-// Where text sits inside a shape (same rules as Excalidraw's own layout).
-const PAD = 14; // same as the patched Excalidraw padding (scripts/patch-excalidraw.mjs)
-function labelArea(c: ExcalidrawElement) {
-  const k = c.type === "ellipse" ? Math.SQRT2 / 2 : c.type === "diamond" ? 0.5 : 1;
-  const ox = PAD + (c.type === "ellipse" ? (c.width / 2) * (1 - Math.SQRT2 / 2) : c.type === "diamond" ? c.width / 4 : 0);
-  const oy = PAD + (c.type === "ellipse" ? (c.height / 2) * (1 - Math.SQRT2 / 2) : c.type === "diamond" ? c.height / 4 : 0);
-  const maxW = (k === 1 ? c.width : Math.round(c.width * k)) - PAD * 2;
-  const maxH = (k === 1 ? c.height : Math.round(c.height * k)) - PAD * 2;
-  return { x: c.x + ox, y: c.y + oy, maxW, maxH, k };
-}
-
-/** Grows the shape if its text no longer fits, then places the text again. */
-function placeLabel(text: TextLike, container: ExcalidrawElement): { text: Patch; container?: Patch } {
-  let c = container;
-  let area = labelArea(c);
-  let containerPatch: Patch | undefined;
-  if (text.height > area.maxH) {
-    const height = (text.height + PAD * 2) / area.k;
-    containerPatch = { height };
-    c = { ...c, height } as ExcalidrawElement;
-    area = labelArea(c);
-  }
-  const y =
-    text.verticalAlign === "top"
-      ? area.y
-      : text.verticalAlign === "bottom"
-        ? area.y + area.maxH - text.height
-        : area.y + area.maxH / 2 - text.height / 2;
-  const x =
-    text.textAlign === "left"
-      ? area.x
-      : text.textAlign === "right"
-        ? area.x + area.maxW - text.width
-        : area.x + area.maxW / 2 - text.width / 2;
-  return { text: { x, y }, container: containerPatch };
-}
 
 /** Applies a change to the selected elements (and their text), as one undo step. */
 function update(
@@ -160,8 +127,11 @@ function update(
     const isLabel = el.type === "text" && el.containerId && selectedIds[el.containerId];
     if (!patch && patchText && el.type === "text" && (selectedIds[el.id] || isLabel)) patch = patchText(el);
     if (!patch) return el;
-    const updated = newElementWith(el, patch as never);
-    const resizes = ["fontSize", "fontFamily", "textAlign", "customData", "originalText"].some((k) => k in patch);
+    const resizes = ["fontSize", "fontFamily", "lineHeight", "textAlign", "customData", "originalText"].some((k) => k in patch);
+    // Re-wrap from the text as typed, not from its current line breaks (which
+    // a bigger size may have added).
+    const rewrap = el.type === "text" && resizes && !("text" in patch) ? { text: el.originalText } : {};
+    const updated = newElementWith(el, { ...rewrap, ...patch } as never);
     if (el.type === "text" && resizes) remeasure.push(updated);
     return updated;
   });
@@ -375,9 +345,10 @@ export function SelectionToolbar({ api }: { api: ExcalidrawImperativeAPI }) {
         display={<FontIcon />}
         entries={FONTS.map((f) => ({
           label: f.label,
-          labelStyle: { fontFamily: `"${f.css}", var(--fx-font)`, fontSize: 13 },
+          labelStyle: { fontFamily: `"${f.css}", var(--fx-font)`, fontWeight: f.weight, fontSize: 13 },
           checked: text.fontFamily === f.value,
-          onSelect: () => void ensureFont(f.css).then(() => update(api, null, () => ({ fontFamily: f.value }))),
+          onSelect: () =>
+            void ensureFont(f.css, f.weight).then(() => update(api, null, () => ({ fontFamily: f.value, lineHeight: f.lineHeight }))),
         }))}
       />,
     ]);
@@ -393,8 +364,10 @@ export function SelectionToolbar({ api }: { api: ExcalidrawImperativeAPI }) {
           labelStyle: f.preview,
           checked: text.fontSize === f.value,
           onSelect: () => {
-            const css = FONTS.find((x) => x.value === text.fontFamily)?.css;
-            void (css ? ensureFont(css) : Promise.resolve()).then(() => update(api, null, () => ({ fontSize: f.value })));
+            const font = FONTS.find((x) => x.value === text.fontFamily);
+            void (font ? ensureFont(font.css, font.weight) : Promise.resolve()).then(() =>
+              update(api, null, () => ({ fontSize: f.value })),
+            );
           },
         }))}
       />,
