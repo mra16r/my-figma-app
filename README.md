@@ -10,7 +10,7 @@ A personal FigJam-style whiteboard. It runs entirely in the browser, has no serv
 |---|---|---|
 | 1 | Blank board online (Excalidraw canvas, clean style) | ✅ |
 | 2 | Google sign-in + saving to Drive | ✅ |
-| 3 | Home screen: workspaces → folders → boards | ⏳ |
+| 3 | Home screen: workspaces → folders → boards | ✅ |
 | 4 | Images stored as separate Drive files | ⏳ |
 | 5 | Polish: sticky notes, saved indicator, local cache | ⏳ |
 
@@ -26,3 +26,11 @@ Then open http://localhost:5173/my-figma-app/
 ## Deploy
 
 Every push to `main` builds the app and publishes it to GitHub Pages (`.github/workflows/deploy.yml`).
+
+## Test locally without Google
+
+```bash
+npm run dev
+```
+
+Then open http://localhost:5173/my-figma-app/?mock to use a fake in-browser Drive (add `&reset` to start fresh). This test mode only exists in local dev, never on the live site.

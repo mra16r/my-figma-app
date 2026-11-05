@@ -1,22 +1,15 @@
 import type { ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
-import { APP_FOLDER_NAME } from "../config";
 import {
+  createFile,
   createFolder,
-  createJsonFile,
-  findByRole,
-  readTextFile,
-  updateJsonFile,
-  type DriveFile,
+  findByProperty,
+  readBlob,
+  readText,
+  trashFile,
+  updateContent,
 } from "../google/drive";
 
-// Drive layout (Phase 2):
-//   My Figma App/            ← app folder, tagged role=root
-//     My first board.excalidraw   ← tagged role=board
-// Files are found by their tags, so renaming them in Drive is fine.
-
-export type BoardRef = { id: string; name: string };
-
-const EMPTY_BOARD = JSON.stringify({
+export const EMPTY_BOARD = JSON.stringify({
   type: "excalidraw",
   version: 2,
   source: "my-figma-app",
@@ -25,22 +18,8 @@ const EMPTY_BOARD = JSON.stringify({
   files: {},
 });
 
-export async function ensureAppFolder(): Promise<DriveFile> {
-  const existing = await findByRole("root");
-  if (existing.length > 0) return existing[0];
-  return createFolder(APP_FOLDER_NAME, undefined, { role: "root" });
-}
-
-/** Opens the most recently edited board, creating a first one if there is none. */
-export async function ensureDefaultBoard(folderId: string): Promise<BoardRef> {
-  const boards = await findByRole("board", folderId);
-  if (boards.length > 0) return { id: boards[0].id, name: stripExtension(boards[0].name) };
-  const file = await createJsonFile("My first board.excalidraw", folderId, { role: "board" }, EMPTY_BOARD);
-  return { id: file.id, name: stripExtension(file.name) };
-}
-
 export async function loadBoard(fileId: string): Promise<ExcalidrawInitialDataState> {
-  const text = await readTextFile(fileId);
+  const text = await readText(fileId);
   if (!text.trim()) return {};
   const data = JSON.parse(text);
   if (data?.type !== "excalidraw") throw new Error("This file is not a board.");
@@ -48,9 +27,83 @@ export async function loadBoard(fileId: string): Promise<ExcalidrawInitialDataSt
 }
 
 export function saveBoard(fileId: string, json: string): Promise<void> {
-  return updateJsonFile(fileId, json);
+  return updateContent(fileId, json, "application/json");
 }
 
-function stripExtension(name: string): string {
-  return name.replace(/\.excalidraw$/i, "");
+// ---- Thumbnails ----------------------------------------------------------
+// Each board gets a small PNG preview in "My Figma App/.thumbnails/",
+// tagged with the board's id, so the home screen can show it.
+
+/** boardId → thumbnail file id (null = known to have none). */
+const thumbIds = new Map<string, string | null>();
+let thumbsFolder: Promise<string> | null = null;
+
+export function rememberThumbnails(thumbs: Map<string, { id: string }>): void {
+  for (const [boardId, t] of thumbs) thumbIds.set(boardId, t.id);
+}
+
+export function forgetThumbnail(boardId: string): void {
+  thumbIds.set(boardId, null);
+}
+
+function ensureThumbsFolder(): Promise<string> {
+  thumbsFolder ??= (async () => {
+    const [existing] = await findByProperty("role", "thumbs");
+    if (existing) return existing.id;
+    const [root] = await findByProperty("role", "root");
+    if (!root) throw new Error("App folder not found.");
+    const folder = await createFolder(".thumbnails", root.id, { role: "thumbs" });
+    return folder.id;
+  })().catch((err) => {
+    thumbsFolder = null;
+    throw err;
+  });
+  return thumbsFolder;
+}
+
+async function findThumbId(boardId: string): Promise<string | null> {
+  if (thumbIds.has(boardId)) return thumbIds.get(boardId)!;
+  const [file] = await findByProperty("board", boardId);
+  thumbIds.set(boardId, file?.id ?? null);
+  return file?.id ?? null;
+}
+
+export async function saveThumbnail(boardId: string, png: Blob): Promise<void> {
+  const existing = await findThumbId(boardId);
+  if (existing) {
+    await updateContent(existing, png, "image/png");
+    return;
+  }
+  const folderId = await ensureThumbsFolder();
+  const file = await createFile(
+    {
+      name: `${boardId}.png`,
+      mimeType: "image/png",
+      parents: [folderId],
+      appProperties: { role: "thumb", board: boardId },
+    },
+    png,
+  );
+  thumbIds.set(boardId, file.id);
+}
+
+export async function removeThumbnail(boardId: string): Promise<void> {
+  const existing = await findThumbId(boardId);
+  if (!existing) return;
+  await trashFile(existing);
+  thumbIds.set(boardId, null);
+}
+
+/** Object URLs for thumbnails, keyed by file id + version. */
+const thumbUrls = new Map<string, Promise<string>>();
+
+export function thumbnailUrl(thumb: { id: string; modifiedTime: string }): Promise<string> {
+  const key = `${thumb.id}@${thumb.modifiedTime}`;
+  let url = thumbUrls.get(key);
+  if (!url) {
+    url = readBlob(thumb.id).then((blob) => URL.createObjectURL(blob));
+    url.catch(() => thumbUrls.delete(key));
+    thumbUrls.set(key, url);
+  }
+  return url;
 }

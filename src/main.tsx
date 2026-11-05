@@ -5,8 +5,22 @@ import App from "./App";
 import "@excalidraw/excalidraw/index.css";
 import "./index.css";
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+async function start() {
+  // Local testing only: ?mock swaps Google Drive for an in-browser fake.
+  // import.meta.env.DEV is false in the live build, so this code is left out.
+  if (import.meta.env.DEV) {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("mock")) {
+      const { installMockDrive } = await import("./dev/mockDrive");
+      installMockDrive(params.has("reset"));
+    }
+  }
+
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+}
+
+void start();
