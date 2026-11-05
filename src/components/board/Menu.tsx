@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { CheckIcon, ChevronRight } from "./icons";
 
@@ -27,6 +27,8 @@ type Props = {
   side?: "below" | "above";
   /** Pickers are as wide as their content; app menus are at least 200px. */
   compact?: boolean;
+  /** Extra content under the items (like the custom size field). */
+  footer?: ReactNode;
 };
 
 const isItem = (e: MenuEntry): e is MenuItem => "label" in e;
@@ -42,7 +44,7 @@ function groupsOf(entries: MenuEntry[]): { entry: MenuEntry; index: number }[][]
 }
 
 /** Dark dropdown menu, placed next to its trigger and kept on screen. */
-export function Menu({ anchor, entries, onClose, align = "start", side = "below", compact }: Props) {
+export function Menu({ anchor, entries, onClose, align = "start", side = "below", compact, footer }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: anchor.left, top: anchor.bottom + 4 });
   const [active, setActive] = useState(-1);
@@ -66,11 +68,15 @@ export function Menu({ anchor, entries, onClose, align = "start", side = "below"
       if (!ref.current?.contains(e.target as Node)) onClose();
     };
     const onKey = (e: KeyboardEvent) => {
+      // Typing in a field inside the menu: only Escape is the menu's.
+      const inField = e.target instanceof HTMLInputElement && ref.current?.contains(e.target);
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
         if (openSub >= 0) setOpenSub(-1);
         else onClose();
+      } else if (inField) {
+        return;
       } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
         e.stopPropagation();
@@ -118,6 +124,7 @@ export function Menu({ anchor, entries, onClose, align = "start", side = "below"
         }}
         onClose={onClose}
       />
+      {footer && <div className="fx-menu-group fx-menu-footer">{footer}</div>}
     </div>,
     document.body,
   );

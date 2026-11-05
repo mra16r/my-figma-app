@@ -1249,6 +1249,44 @@ mfa-rich-text > div {
   color: rgb(255 255 255 / 70%);
 }
 
+/* "Type a size" field at the bottom of the size menu. */
+.fx-menu-field {
+  padding: 0 8px;
+}
+
+.fx-size-input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  margin: 0;
+  padding: 0 8px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 5px;
+  outline: none;
+  background: var(--fx-dark-line);
+  color: #fff;
+  font: 450 11px/16px var(--fx-font);
+  cursor: text;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.fx-size-input::-webkit-outer-spin-button,
+.fx-size-input::-webkit-inner-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+
+.fx-size-input::placeholder {
+  color: rgb(255 255 255 / 40%);
+}
+
+.fx-size-input:focus {
+  box-shadow: inset 0 0 0 1px var(--fx-accent-strong);
+}
+
 .fx-menu-heading {
   padding: 4px 16px;
   color: rgb(255 255 255 / 70%);

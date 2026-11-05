@@ -362,7 +362,18 @@ export function SelectionToolbar({ api }: { api: ExcalidrawImperativeAPI }) {
     const inPlay = editor ? editor.selectedSizes() : [...new Set(paragraphSizes(text) ?? [text.fontSize])];
     const mixed = inPlay.length > 1;
     const size = FONT_SIZES.find((f) => f.value === inPlay[0]);
-    const sizeLabel = mixed ? "Mixed sizes" : (size?.label ?? `${Math.round(inPlay[0])} px`);
+    // A size typed in shows as its number, like FigJam (and the menu then lists each preset's size).
+    const custom = !mixed && !size;
+    const sizeLabel = mixed ? "Mixed sizes" : (size?.label ?? `${inPlay[0]}`);
+    const applySize = (value: number) => {
+      const font = FONTS.find((x) => x.value === text.fontFamily);
+      void (font ? ensureFont(font.css, font.weight) : Promise.resolve()).then(() => {
+        // While typing: just the selected lines (like FigJam). Otherwise: all of it.
+        const typing = activeRichEditor();
+        if (typing) typing.setSelectedSize(value);
+        else update(api, null, (el) => ({ fontSize: value, customData: withoutSizes(el.customData) }));
+      });
+    };
     const font = FONTS.find((f) => f.value === text.fontFamily);
     groups.push([
       <Dropdown
@@ -389,17 +400,11 @@ export function SelectionToolbar({ api }: { api: ExcalidrawImperativeAPI }) {
         entries={FONT_SIZES.map((f) => ({
           label: f.label,
           labelStyle: f.preview,
+          shortcut: custom ? String(f.value) : undefined,
           checked: !mixed && inPlay[0] === f.value,
-          onSelect: () => {
-            const font = FONTS.find((x) => x.value === text.fontFamily);
-            void (font ? ensureFont(font.css, font.weight) : Promise.resolve()).then(() => {
-              // While typing: just the selected lines (like FigJam). Otherwise: all of it.
-              const typing = activeRichEditor();
-              if (typing) typing.setSelectedSize(f.value);
-              else update(api, null, (el) => ({ fontSize: f.value, customData: withoutSizes(el.customData) }));
-            });
-          },
+          onSelect: () => applySize(f.value),
         }))}
+        footer={<SizeField value={mixed ? null : inPlay[0]} onApply={applySize} />}
       />,
     ]);
     groups.push([
@@ -458,7 +463,11 @@ export function SelectionToolbar({ api }: { api: ExcalidrawImperativeAPI }) {
       role="toolbar"
       aria-label="Selection properties"
       style={{ top: barTop, left: centerX.current }}
-      onMouseDown={(e) => e.preventDefault()}
+      // Keep focus where it is (canvas or text being typed), except for fields in
+      // menus opened from here (React passes their events up through this bar).
+      onMouseDown={(e) => {
+        if (!(e.target instanceof HTMLInputElement)) e.preventDefault();
+      }}
     >
       {groups.map((group, i) => [i > 0 && <span key={`d${i}`} className="fx-st-divider" />, ...group])}
     </div>
@@ -689,19 +698,26 @@ function ColorButton<T extends string>({
 }
 
 function Dropdown({
-  side,
   label,
   display,
   entries,
   wide,
+  footer,
 }: {
   side: Side;
   label: string;
   display: ReactNode;
   entries: MenuEntry[];
   wide?: boolean;
+  footer?: ReactNode;
 }) {
   const menu = useMenu();
+  const close = () => {
+    menu.close();
+    // While typing in a shape, go back to the text (a field in the menu may have had focus).
+    const typing = activeRichEditor();
+    if (typing && document.activeElement !== typing) typing.focus();
+  };
   return (
     <>
       <StButton label={label} tip={label.split(",")[0]} wide={wide} open={!!menu.anchor} onClick={(e) => menu.toggle(e.currentTarget)}>
@@ -709,8 +725,59 @@ function Dropdown({
         <ChevronDown />
       </StButton>
       {/* Like FigJam, pickers open under the toolbar (above it only when there's no room). */}
-      {menu.anchor && <Menu anchor={menu.anchor} side="below" compact onClose={menu.close} entries={entries} />}
+      {menu.anchor && <Menu anchor={menu.anchor} side="below" compact onClose={close} entries={entries} footer={footer} />}
     </>
+  );
+}
+
+const MIN_SIZE = 1;
+const MAX_SIZE = 1000;
+
+/**
+ * FigJam's "type a size" field at the bottom of the size menu. The size applies as
+ * you type (and right away on Enter); empty with "Size" when the text has several.
+ * (The class names tell Excalidraw's text editor that clicking here doesn't end typing.)
+ */
+function SizeField({ value, onApply }: { value: number | null; onApply: (size: number) => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  const timer = useRef(0);
+  const [draft, setDraft] = useState(value === null ? "" : String(value));
+  useEffect(() => {
+    if (document.activeElement !== input.current) setDraft(value === null ? "" : String(value));
+  }, [value]);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const apply = (raw: string, now: boolean) => {
+    window.clearTimeout(timer.current);
+    const n = Number.parseFloat(raw);
+    if (!Number.isFinite(n) || n < MIN_SIZE) return;
+    const size = Math.min(MAX_SIZE, Math.round(n * 10) / 10);
+    if (now) onApply(size);
+    else timer.current = window.setTimeout(() => onApply(size), 250);
+  };
+  return (
+    <div className="fx-menu-field properties-content">
+      <input
+        ref={input}
+        className="fx-size-input properties-trigger"
+        type="number"
+        inputMode="decimal"
+        min={MIN_SIZE}
+        max={MAX_SIZE}
+        placeholder="Size"
+        aria-label="Custom font size"
+        value={draft}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          apply(e.target.value, false);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            apply(draft, true);
+          }
+        }}
+      />
+    </div>
   );
 }
 
