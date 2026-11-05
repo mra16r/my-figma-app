@@ -138,6 +138,79 @@ export const ConnectorTool = ({ size }: P) => (
   </svg>
 );
 
+/** Bottom toolbar: one button for all shapes and connectors. */
+export const ShapesTool = ({ size }: P) => (
+  <svg {...svg(size)} strokeWidth={1.4}>
+    <rect x="3.5" y="3.5" width="9" height="9" rx="1.5" />
+    <circle cx="16.5" cy="16.5" r="4" />
+    <path d="M14.5 4.5h4a1 1 0 0 1 1 1v4M17.5 7.5l2 2 2-2" />
+  </svg>
+);
+
+export const ElbowTool = ({ size }: P) => (
+  <svg {...svg(size)}>
+    <path d="M5 19v-5.5a2 2 0 0 1 2-2h8.5a2 2 0 0 0 2-2V5" />
+    <path d="M15 7.5l2.5-2.5 2.5 2.5" />
+  </svg>
+);
+
+export const CurvedTool = ({ size }: P) => (
+  <svg {...svg(size)}>
+    <path d="M5 19c0-7 4-6 7-8s5-3 5.5-6" />
+    <path d="M15 7.2l2.6-2.4 2.3 2.7" />
+  </svg>
+);
+
+export const ArrowTool = ({ size }: P) => (
+  <svg {...svg(size)}>
+    <path d="M5.5 18.5l12-12M11 6.5h6.5V13" />
+  </svg>
+);
+
+export const SquareShape = ({ size }: P) => (
+  <svg {...svg(size)}>
+    <rect x="5" y="5" width="14" height="14" />
+  </svg>
+);
+
+export const RoundedShape = ({ size }: P) => (
+  <svg {...svg(size)}>
+    <rect x="5" y="5" width="14" height="14" rx="4" />
+  </svg>
+);
+
+export const TriangleShape = ({ size }: P) => (
+  <svg {...svg(size)}>
+    <path d="M12 4.5l8 14H4z" />
+  </svg>
+);
+
+export const TriangleDownShape = ({ size }: P) => (
+  <svg {...svg(size)}>
+    <path d="M12 19.5l8-14H4z" />
+  </svg>
+);
+
+export const StrokeIcon = ({ size = 18 }: P) => (
+  <svg {...svg(size)} viewBox="0 0 18 18" strokeWidth={1.3}>
+    <path d="M3 5h12M3 9h12M3 13h12" />
+  </svg>
+);
+
+export const FontIcon = ({ size = 18 }: P) => (
+  <svg {...svg(size)} viewBox="0 0 18 18" strokeWidth={1.3}>
+    <path d="M2.5 13.5L6 4.5l3.5 9M3.8 10.5h4.4M12.5 8.2c.5-.5 1.1-.7 1.8-.7 1.2 0 1.9.7 1.9 1.9v4.1M16.2 11.2c-.6-.3-1.3-.4-2-.3-1 .1-1.7.7-1.7 1.5 0 .7.6 1.2 1.4 1.2 1 0 1.7-.6 2.3-1.3" />
+  </svg>
+);
+
+export const AlignIcon = ({ size = 18, align = "center" }: P & { align?: "left" | "center" | "right" }) => (
+  <svg {...svg(size)} viewBox="0 0 18 18" strokeWidth={1.3}>
+    {align === "left" && <path d="M3 4.5h12M3 9h7M3 13.5h10" />}
+    {align === "center" && <path d="M3 4.5h12M5.5 9h7M4.5 13.5h9" />}
+    {align === "right" && <path d="M3 4.5h12M8 9h7M5 13.5h10" />}
+  </svg>
+);
+
 export const LineTool = ({ size }: P) => (
   <svg {...svg(size)}>
     <path d="M5.5 18.5l13-13" />

@@ -9,6 +9,7 @@ import {
   getNonDeletedElements,
   getSceneVersion,
   restoreElements,
+  viewportCoordsToSceneCoords,
 } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type {
@@ -38,6 +39,7 @@ import { CanvasOverlay, STICKY_SIZE, useArrowCursor, useDotGrid } from "./Canvas
 import { FilePanel, type PageMeta } from "./FilePanel";
 import type { MenuEntry } from "./Menu";
 import { SelectionToolbar, STICKY_COLORS } from "./SelectionToolbar";
+import { makeTriangle, selectShape } from "./shapes";
 import { selectTool, Toolbar } from "./Toolbar";
 import { TopRightBar, type SaveStatus } from "./TopRightBar";
 import { ZoomControls, zoomTo, zoomToFit } from "./ZoomControls";
@@ -557,6 +559,26 @@ export default function BoardView({ board, location, hasThumbnail, content, imag
     });
   }, [api, pageEl, stickyColor]);
 
+  // ---- Triangles (drag to size, or click for a default one) ----
+  useEffect(() => {
+    if (!api) return;
+    return api.onPointerUp((tool, state, event) => {
+      if (tool.type !== "custom" || (tool.customType !== "triangle" && tool.customType !== "triangle-down")) return;
+      const o = state.origin;
+      const end = viewportCoordsToSceneCoords({ clientX: event.clientX, clientY: event.clientY }, api.getAppState());
+      let box = { x: Math.min(o.x, end.x), y: Math.min(o.y, end.y), width: Math.abs(end.x - o.x), height: Math.abs(end.y - o.y) };
+      if (box.width < 6 && box.height < 6) box = { x: o.x - 60, y: o.y - 52, width: 120, height: 104 };
+      if (event.shiftKey) box.height = box.width = Math.max(box.width, box.height);
+      const triangle = makeTriangle(api, tool.customType, box);
+      api.updateScene({
+        elements: [...api.getSceneElementsIncludingDeleted(), triangle],
+        appState: { selectedElementIds: { [triangle.id]: true } },
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+      selectTool(api, "selection");
+    });
+  }, [api]);
+
   // ---- Extra shortcuts (on top of Excalidraw's own) ----
   useEffect(() => {
     if (!api) return;
@@ -568,7 +590,7 @@ export default function BoardView({ board, location, hasThumbnail, content, imag
       let handled = true;
       if (key === "s" && !e.shiftKey) selectTool(api, "sticky");
       else if (key === "s" && e.shiftKey) selectTool(api, "frame");
-      else if (key === "x" && !e.shiftKey) selectTool(api, "arrow");
+      else if (key === "x" && !e.shiftKey) selectShape(api, "elbow");
       else if (e.key === "?") setShowHelp(true);
       else if (e.key === ")" || (e.shiftKey && e.code === "Digit0")) zoomTo(api, 1);
       else if (e.shiftKey && e.code === "Digit1") zoomToFit(api);

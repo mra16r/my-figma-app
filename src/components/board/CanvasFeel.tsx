@@ -74,13 +74,28 @@ function distToSegment(p: Point, a: Point, b: Point): number {
 const isLinear = (el: ExcalidrawElement) => el.type === "arrow" || el.type === "line" || el.type === "freedraw";
 const isFrame = (el: ExcalidrawElement) => el.type === "frame" || el.type === "magicframe";
 
+/** Ray casting: is the point inside the polygon? */
+function insidePolygon(p: Point, pts: Point[]): boolean {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const a = pts[i];
+    const b = pts[j];
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
 function hits(el: ExcalidrawElement, p: Point, tol: number): boolean {
   if (isLinear(el) && "points" in el) {
     const pts = el.points.map(([x, y]) => ({ x: el.x + x, y: el.y + y }));
     const reach = tol + el.strokeWidth / 2;
     if (pts.length === 1) return Math.hypot(p.x - pts[0].x, p.y - pts[0].y) <= reach;
     for (let i = 1; i < pts.length; i++) if (distToSegment(p, pts[i - 1], pts[i]) <= reach) return true;
-    return false;
+    // Closed, filled lines (like triangles) are picked anywhere inside.
+    const first = pts[0];
+    const last = pts[pts.length - 1];
+    const closed = Math.hypot(first.x - last.x, first.y - last.y) < 1;
+    return closed && el.backgroundColor !== "transparent" && insidePolygon(p, pts);
   }
   const cx = el.x + el.width / 2;
   const cy = el.y + el.height / 2;
@@ -152,7 +167,13 @@ export function CanvasOverlay({ api, stickyColor }: { api: ExcalidrawImperativeA
     let pointer: Point | null = null;
     let pressed = false;
     let onCanvas = false;
+    let dragStart: Point | null = null; // triangle being drawn
     let frame = 0;
+
+    const triangleTool = () => {
+      const t = api.getAppState().activeTool;
+      return t.type === "custom" && (t.customType === "triangle" || t.customType === "triangle-down") ? t.customType : null;
+    };
 
     const draw = () => {
       frame = 0;
@@ -164,7 +185,28 @@ export function CanvasOverlay({ api, stickyColor }: { api: ExcalidrawImperativeA
       p.style.display = "none";
       e.style.display = "none";
       g.style.display = "none";
+
+      const triangle = triangleTool();
+      if (triangle && dragStart && pointer && pressed) {
+        // Live outline while dragging out a triangle.
+        const x1 = Math.min(dragStart.x, pointer.x);
+        const x2 = Math.max(dragStart.x, pointer.x);
+        const y1 = Math.min(dragStart.y, pointer.y);
+        const y2 = Math.max(dragStart.y, pointer.y);
+        const mid = (x1 + x2) / 2;
+        p.setAttribute(
+          "d",
+          triangle === "triangle" ? `M${mid},${y1}L${x2},${y2}L${x1},${y2}Z` : `M${x1},${y1}L${x2},${y1}L${mid},${y2}Z`,
+        );
+        p.style.display = "";
+        return;
+      }
       if (!pointer || !onCanvas) return;
+      if (triangle) {
+        const canvas = document.querySelector<HTMLCanvasElement>(".fx-board canvas.interactive");
+        if (canvas && canvas.style.cursor !== "crosshair") canvas.style.cursor = "crosshair";
+        return;
+      }
 
       if (s.activeTool.type === "custom" && s.activeTool.customType === "sticky") {
         const size = STICKY_SIZE * s.zoom.value;
@@ -198,6 +240,8 @@ export function CanvasOverlay({ api, stickyColor }: { api: ExcalidrawImperativeA
       pointer = { x: ev.clientX, y: ev.clientY };
       pressed = ev.buttons !== 0;
       onCanvas = (ev.target as Element | null)?.classList?.contains("interactive") ?? false;
+      if (ev.type === "pointerdown") dragStart = onCanvas && triangleTool() ? pointer : null;
+      if (ev.type === "pointerup") dragStart = null;
       schedule();
     };
     const onLeave = () => {

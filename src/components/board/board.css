@@ -610,89 +610,282 @@
   background: #fafafa !important;
 }
 
-/* ---- Selection toolbar ---- */
+/* ---- Shapes tray (above the toolbar while drawing shapes) ---- */
+.fx-toolbar-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.fx-shape-tray {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 48px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  max-width: calc(100vw - 24px);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.fx-tray-item {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  color: var(--fx-text);
+}
+
+.fx-tray-item:hover {
+  background: var(--fx-hover);
+}
+
+.fx-tray-item[data-active] {
+  background: var(--fx-hover);
+  box-shadow: inset 0 0 0 1.5px var(--fx-accent);
+  color: var(--fx-accent);
+}
+
+.fx-tray-color {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  padding: 0 6px 0 8px;
+  border-radius: 8px;
+  color: var(--fx-muted);
+}
+
+.fx-tray-color:hover,
+.fx-tray-color[data-open] {
+  background: var(--fx-hover);
+}
+
+.fx-tray-color .fx-swatch {
+  width: 22px;
+  height: 22px;
+}
+
+.fx-tray-divider {
+  flex: none;
+  width: 1px;
+  height: 24px;
+  margin: 0 6px;
+  background: var(--fx-line);
+}
+
+/* ---- Selection toolbar (dark, floats above what's selected) ---- */
 .fx-selection-toolbar {
   position: fixed;
   z-index: 6;
   display: flex;
   align-items: center;
   gap: 2px;
-  height: 40px;
-  padding: 0 4px;
+  height: 44px;
+  padding: 0 6px;
   box-sizing: border-box;
-  border-radius: 10px;
+  border-radius: 12px;
+  background: #1e1e1e;
+  color: #fff;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 20%), 0 8px 20px rgb(0 0 0 / 18%);
   transform: translateX(-50%);
   white-space: nowrap;
 }
 
-.fx-swatch-button {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-}
-
-.fx-swatch {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--c);
-  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 14%);
-}
-
-.fx-swatch[data-ring] {
-  background: radial-gradient(circle, #fff 0 4px, var(--c) 4.5px);
-}
-
-.fx-swatch[data-none] {
-  background: linear-gradient(135deg, #fff 45%, #e5484d 45% 55%, #fff 55%);
-}
-
-.fx-swatch-button[data-selected]::before {
-  content: "";
-  position: absolute;
-  inset: 4px;
-  border-radius: 50%;
-  box-shadow: 0 0 0 1.5px var(--fx-blue);
-}
-
-.fx-swatches {
-  position: fixed;
-  z-index: 20;
-  display: grid;
-  grid-template-columns: repeat(6, 32px);
-  gap: 2px;
-  padding: 6px;
-  border-radius: 10px;
-  transform: translate(-50%, -100%);
-}
-
-.fx-dropdown-button {
+.fx-st-btn {
   position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
   height: 32px;
+  min-width: 32px;
   padding: 0 6px 0 8px;
-  border-radius: 6px;
-  color: var(--fx-muted);
+  box-sizing: border-box;
+  border-radius: 7px;
+  color: #fff !important;
+}
+
+.fx-st-btn:hover,
+.fx-st-btn[data-open] {
+  background: #383838 !important;
+}
+
+.fx-st-btn svg {
+  flex: none;
+}
+
+.fx-st-btn > svg:last-child:not(:first-child) {
+  color: rgb(255 255 255 / 60%);
+}
+
+.fx-st-btn[data-wide] {
+  min-width: 110px;
+  justify-content: space-between;
+}
+
+.fx-st-text {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.fx-st-divider {
+  flex: none;
+  width: 1px;
+  height: 24px;
+  margin: 0 4px;
+  background: #3d3d3d;
+}
+
+.fx-swatch {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--c);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 14%);
+}
+
+.fx-selection-toolbar .fx-swatch {
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 25%);
+}
+
+.fx-swatch[data-none] {
+  background: linear-gradient(135deg, #fff 44%, #ef4b2b 44% 56%, #fff 56%);
 }
 
 .fx-stroke-sample {
   display: block;
   width: 18px;
   border-radius: 2px;
-  background: var(--fx-text);
+  background: currentColor;
 }
 
-.fx-size-label {
-  min-width: 16px;
-  color: var(--fx-text);
-  font-size: 11px;
-  font-weight: 600;
-  text-align: center;
+/* ---- Dark popovers: colors and shapes ---- */
+.fx-color-pop,
+.fx-dark-pop {
+  position: fixed;
+  z-index: 1001;
+  padding: 10px;
+  box-sizing: border-box;
+  border-radius: 13px;
+  background: #1e1e1e;
+  color: #fff;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 25%), 0 10px 24px rgb(0 0 0 / 22%);
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 12px;
+  cursor: var(--fx-cursor, default);
+  -webkit-font-smoothing: antialiased;
+}
+
+.fx-dark-pop {
+  transform: translate(-50%, -100%);
+}
+
+.fx-color-pop button,
+.fx-dark-pop button {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  background: none;
+  padding: 0;
+  margin: 0;
+  cursor: var(--fx-cursor, default);
+}
+
+.fx-color-tabs {
+  display: flex;
+  gap: 4px;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #383838;
+}
+
+.fx-color-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px !important;
+  border-radius: 7px;
+  font-weight: 500;
+}
+
+.fx-color-tab:hover {
+  background: #2e2e2e !important;
+}
+
+.fx-color-tab[data-active] {
+  background: var(--fx-accent, #9747ff) !important;
+}
+
+.fx-color-grid {
+  display: grid;
+  grid-template-columns: repeat(11, 24px);
+  gap: 8px;
+}
+
+.fx-color-swatch {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  border-radius: 50% !important;
+  background: var(--c) !important;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 18%);
+}
+
+.fx-color-swatch:hover {
+  transform: scale(1.12);
+}
+
+.fx-color-swatch[data-selected]::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--fx-accent, #9747ff);
+}
+
+.fx-color-custom {
+  background: conic-gradient(#ff4d4d, #ffcd3c, #3fc06b, #3ccfc0, #2d9cff, #8c4dff, #f04fb3, #ff4d4d) !important;
+}
+
+.fx-color-input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.fx-shape-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 40px);
+  gap: 4px;
+}
+
+.fx-shape-cell {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+}
+
+.fx-shape-cell:hover:not(:disabled) {
+  background: #2e2e2e !important;
+}
+
+.fx-shape-cell[data-active] {
+  background: var(--fx-accent, #9747ff) !important;
+}
+
+.fx-shape-cell:disabled {
+  opacity: 0.3;
 }
 
 /* ---- Canvas feedback ---- */
