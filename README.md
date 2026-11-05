@@ -9,7 +9,7 @@ A personal FigJam-style whiteboard. It runs entirely in the browser, has no serv
 | # | Phase | State |
 |---|---|---|
 | 1 | Blank board online (Excalidraw canvas, clean style) | ✅ |
-| 2 | Google sign-in + saving to Drive | ⏳ |
+| 2 | Google sign-in + saving to Drive | ✅ |
 | 3 | Home screen: workspaces → folders → boards | ⏳ |
 | 4 | Images stored as separate Drive files | ⏳ |
 | 5 | Polish: sticky notes, saved indicator, local cache | ⏳ |

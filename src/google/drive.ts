@@ -1,0 +1,135 @@
+import { clearToken, getValidToken } from "./auth";
+
+// Thin wrapper around the Google Drive REST API (v3), called straight
+// from the browser. With the drive.file scope, every query only ever
+// sees files this app created.
+
+const API = "https://www.googleapis.com/drive/v3";
+const UPLOAD = "https://www.googleapis.com/upload/drive/v3";
+export const FOLDER_MIME = "application/vnd.google-apps.folder";
+
+/** Thrown when the sign-in has expired and the user needs to reconnect. */
+export class AuthExpiredError extends Error {
+  constructor() {
+    super("Your Google session expired.");
+    this.name = "AuthExpiredError";
+  }
+}
+
+export type DriveFile = {
+  id: string;
+  name: string;
+  mimeType: string;
+  modifiedTime?: string;
+  appProperties?: Record<string, string>;
+};
+
+const FILE_FIELDS = "id,name,mimeType,modifiedTime,appProperties";
+
+async function driveFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const token = getValidToken();
+  if (!token) throw new AuthExpiredError();
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${token}`);
+  const res = await fetch(url, { ...init, headers });
+  if (res.status === 401) {
+    clearToken();
+    throw new AuthExpiredError();
+  }
+  if (!res.ok) {
+    let detail = "";
+    try {
+      const body = await res.json();
+      detail = body?.error?.message ?? "";
+    } catch {
+      /* not JSON */
+    }
+    throw new Error(`Google Drive error ${res.status}${detail ? `: ${detail}` : ""}`);
+  }
+  return res;
+}
+
+/** Escapes a value for use inside a Drive search query string. */
+function q(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+export async function getUser(): Promise<{ displayName: string; emailAddress: string }> {
+  const res = await driveFetch(`${API}/about?fields=user(displayName,emailAddress)`);
+  const body = await res.json();
+  return body.user;
+}
+
+export async function findFiles(query: string): Promise<DriveFile[]> {
+  const params = new URLSearchParams({
+    q: `${query} and trashed = false`,
+    fields: `files(${FILE_FIELDS})`,
+    orderBy: "modifiedTime desc",
+    spaces: "drive",
+    pageSize: "100",
+  });
+  const res = await driveFetch(`${API}/files?${params}`);
+  const body = await res.json();
+  return body.files as DriveFile[];
+}
+
+/** Finds files tagged with the given app role, optionally inside one folder. */
+export function findByRole(role: string, parentId?: string): Promise<DriveFile[]> {
+  let query = `appProperties has { key='role' and value='${q(role)}' }`;
+  if (parentId) query += ` and '${q(parentId)}' in parents`;
+  return findFiles(query);
+}
+
+export async function createFolder(
+  name: string,
+  parentId: string | undefined,
+  appProperties: Record<string, string>,
+): Promise<DriveFile> {
+  const res = await driveFetch(`${API}/files?fields=${FILE_FIELDS}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name,
+      mimeType: FOLDER_MIME,
+      parents: parentId ? [parentId] : undefined,
+      appProperties,
+    }),
+  });
+  return res.json();
+}
+
+/** Creates a file with metadata and JSON content in one request. */
+export async function createJsonFile(
+  name: string,
+  parentId: string,
+  appProperties: Record<string, string>,
+  content: string,
+): Promise<DriveFile> {
+  const boundary = `mfa-${crypto.randomUUID()}`;
+  const metadata = { name, mimeType: "application/json", parents: [parentId], appProperties };
+  const body =
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
+    `${JSON.stringify(metadata)}\r\n` +
+    `--${boundary}\r\nContent-Type: application/json\r\n\r\n` +
+    `${content}\r\n--${boundary}--`;
+  const res = await driveFetch(`${UPLOAD}/files?uploadType=multipart&fields=${FILE_FIELDS}`, {
+    method: "POST",
+    headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
+    body,
+  });
+  return res.json();
+}
+
+/** Replaces a file's content. */
+export async function updateJsonFile(fileId: string, content: string): Promise<void> {
+  await driveFetch(`${UPLOAD}/files/${encodeURIComponent(fileId)}?uploadType=media`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: content,
+  });
+}
+
+export async function readTextFile(fileId: string): Promise<string> {
+  const res = await driveFetch(`${API}/files/${encodeURIComponent(fileId)}?alt=media`);
+  return res.text();
+}
