@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
-import BoardView, { type BoardInfo } from "./components/BoardView";
+import BoardView, { type BoardInfo } from "./components/board/BoardView";
 import HomeScreen from "./components/HomeScreen";
 import SignInScreen from "./components/SignInScreen";
 import {
@@ -13,8 +12,8 @@ import {
 } from "./google/auth";
 import { AuthExpiredError, getUser } from "./google/drive";
 import { goToFolder, useRoute } from "./router";
-import { listBoardImages, loadBoard, type BoardImage } from "./storage/boards";
-import { getBoardInfo, loadLibrary, type Library } from "./storage/library";
+import { listBoardImages, loadBoard, type BoardContent, type BoardImage } from "./storage/boards";
+import { getBoardInfo, loadLibrary, pathTo, type Library } from "./storage/library";
 
 type Session =
   | { kind: "starting" }
@@ -165,7 +164,7 @@ function BoardPage({
 }) {
   type State =
     | { kind: "loading" }
-    | { kind: "ready"; board: BoardInfo; data: ExcalidrawInitialDataState; images: BoardImage[] }
+    | { kind: "ready"; board: BoardInfo; data: BoardContent; images: BoardImage[] }
     | { kind: "failed"; error: string };
   const [state, setState] = useState<State>({ kind: "loading" });
 
@@ -211,11 +210,17 @@ function BoardPage({
       </div>
     );
   }
+  const location = state.board.parentId
+    ? pathTo(library, state.board.parentId)
+        .map((n) => n.name)
+        .join(" / ")
+    : "";
   return (
     <BoardView
       board={state.board}
+      location={location}
       hasThumbnail={library.thumbs.has(boardId)}
-      initialData={state.data}
+      content={state.data}
       images={state.images}
       email={email}
       onBack={() => backToFolder(state.board.parentId)}

@@ -1,4 +1,6 @@
-import type { BinaryFileData, ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
+import { getNonDeletedElements, serializeAsJSON } from "@excalidraw/excalidraw";
+import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
+import type { AppState, BinaryFileData, BinaryFiles } from "@excalidraw/excalidraw/types";
 import {
   createFile,
   createFolder,
@@ -11,26 +13,61 @@ import {
 } from "../google/drive";
 
 // Drive layout for board content:
-//   <folder>/Board.excalidraw        shapes and text (role=board)
+//   <folder>/Board.excalidraw        pages with shapes and text (role=board)
 //   My Figma App/.images/<id>.png    pasted images   (role=image, board=<boardId>, file=<excalidraw file id>)
 //   My Figma App/.thumbnails/<id>.png  previews      (role=thumb, board=<boardId>)
+
+export type Page = { id: string; name: string; elements: readonly ExcalidrawElement[] };
+
+export type BoardContent = {
+  pages: Page[];
+  appState: Partial<AppState>;
+  /** Only in boards saved before images had their own files. */
+  files: BinaryFiles;
+};
+
+export const newPageId = () => `page-${crypto.randomUUID().slice(0, 8)}`;
 
 export const EMPTY_BOARD = JSON.stringify({
   type: "excalidraw",
   version: 2,
   source: "my-figma-app",
+  format: 2,
   elements: [],
   appState: {},
   files: {},
+  pages: [{ id: "page-1", name: "Page 1", elements: [] }],
 });
 
-export async function loadBoard(fileId: string): Promise<ExcalidrawInitialDataState> {
+export async function loadBoard(fileId: string): Promise<BoardContent> {
   const text = await readText(fileId);
-  if (!text.trim()) return {};
-  const data = JSON.parse(text);
+  const data = text.trim() ? JSON.parse(text) : { type: "excalidraw" };
   if (data?.type !== "excalidraw") throw new Error("This file is not a board.");
-  // `files` only exists in boards saved before images had their own files.
-  return { elements: data.elements ?? [], appState: data.appState ?? {}, files: data.files ?? {} };
+  const pages: Page[] =
+    Array.isArray(data.pages) && data.pages.length > 0
+      ? data.pages.map((p: Partial<Page>, i: number) => ({
+          id: String(p.id ?? `page-${i + 1}`),
+          name: String(p.name ?? `Page ${i + 1}`),
+          elements: p.elements ?? [],
+        }))
+      : // Boards from before pages existed: everything is on page 1.
+        [{ id: "page-1", name: "Page 1", elements: data.elements ?? [] }];
+  return { pages, appState: data.appState ?? {}, files: data.files ?? {} };
+}
+
+/** Board file content: every page's shapes, without image data. */
+export function serializeBoard(pages: Page[], appState: Partial<AppState>): string {
+  const cleaned = JSON.parse(serializeAsJSON([], appState, {}, "local")).appState;
+  return JSON.stringify({
+    type: "excalidraw",
+    version: 2,
+    source: "my-figma-app",
+    format: 2,
+    elements: [],
+    appState: cleaned,
+    files: {},
+    pages: pages.map((p) => ({ id: p.id, name: p.name, elements: getNonDeletedElements(p.elements) })),
+  });
 }
 
 export function saveBoard(fileId: string, json: string): Promise<void> {
