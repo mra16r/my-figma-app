@@ -13,7 +13,7 @@ import {
 } from "./google/auth";
 import { AuthExpiredError, getUser } from "./google/drive";
 import { goToFolder, useRoute } from "./router";
-import { loadBoard } from "./storage/boards";
+import { listBoardImages, loadBoard, type BoardImage } from "./storage/boards";
 import { getBoardInfo, loadLibrary, type Library } from "./storage/library";
 
 type Session =
@@ -165,7 +165,7 @@ function BoardPage({
 }) {
   type State =
     | { kind: "loading" }
-    | { kind: "ready"; board: BoardInfo; data: ExcalidrawInitialDataState }
+    | { kind: "ready"; board: BoardInfo; data: ExcalidrawInitialDataState; images: BoardImage[] }
     | { kind: "failed"; error: string };
   const [state, setState] = useState<State>({ kind: "loading" });
 
@@ -173,13 +173,12 @@ function BoardPage({
     let alive = true;
     (async () => {
       try {
-        const known = library.nodes.get(boardId);
-        const board =
-          known?.kind === "board"
-            ? { id: known.id, name: known.name, parentId: known.parentId }
-            : await getBoardInfo(boardId);
-        const data = await loadBoard(boardId);
-        if (alive) setState({ kind: "ready", board, data });
+        const [board, data, images] = await Promise.all([
+          getBoardInfo(boardId),
+          loadBoard(boardId),
+          listBoardImages(boardId),
+        ]);
+        if (alive) setState({ kind: "ready", board, data, images });
       } catch (err) {
         if (!alive) return;
         if (err instanceof AuthExpiredError) onAuthExpired();
@@ -217,6 +216,7 @@ function BoardPage({
       board={state.board}
       hasThumbnail={library.thumbs.has(boardId)}
       initialData={state.data}
+      images={state.images}
       email={email}
       onBack={() => backToFolder(state.board.parentId)}
       onSignOut={onSignOut}

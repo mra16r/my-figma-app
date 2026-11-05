@@ -39,6 +39,8 @@ export type Library = {
   workspaces: LibraryNode[];
   /** boardId → its thumbnail file. */
   thumbs: Map<string, Thumb>;
+  /** boardId → Drive ids of its pasted images. */
+  images: Map<string, string[]>;
 };
 
 const BOARD_EXT = ".excalidraw";
@@ -96,11 +98,17 @@ async function fetchLibrary(): Promise<Library> {
 function buildLibrary(rootId: string, files: DriveFile[]): Library {
   const nodes = new Map<string, LibraryNode>();
   const thumbs = new Map<string, Thumb>();
+  const images = new Map<string, string[]>();
 
   for (const f of files) {
     const r = role(f);
-    if (r === "thumb" && f.appProperties?.board) {
-      thumbs.set(f.appProperties.board, { id: f.id, modifiedTime: f.modifiedTime ?? "" });
+    const boardId = f.appProperties?.board;
+    if (r === "thumb" && boardId) {
+      thumbs.set(boardId, { id: f.id, modifiedTime: f.modifiedTime ?? "" });
+      continue;
+    }
+    if (r === "image" && boardId) {
+      images.set(boardId, [...(images.get(boardId) ?? []), f.id]);
       continue;
     }
     if (r !== "workspace" && r !== "folder" && r !== "board") continue;
@@ -140,7 +148,7 @@ function buildLibrary(rootId: string, files: DriveFile[]): Library {
     .sort((a, b) => a.createdTime.localeCompare(b.createdTime));
 
   rememberThumbnails(thumbs);
-  return { rootId, nodes, children, workspaces, thumbs };
+  return { rootId, nodes, children, workspaces, thumbs, images };
 }
 
 /** Workspace → … → node, for breadcrumbs. */
@@ -171,10 +179,12 @@ export function countItems(lib: Library, id: string): number {
 }
 
 /** Name and folder of a board that isn't in the loaded library yet. */
-export async function getBoardInfo(id: string): Promise<{ id: string; name: string; parentId: string | null }> {
+export async function getBoardInfo(
+  id: string,
+): Promise<{ id: string; name: string; parentId: string | null; modifiedTime: string }> {
   const f = await getFile(id);
   if (role(f) !== "board" || f.trashed) throw new Error("This board doesn't exist anymore.");
-  return { id: f.id, name: displayName(f), parentId: f.parents?.[0] ?? null };
+  return { id: f.id, name: displayName(f), parentId: f.parents?.[0] ?? null, modifiedTime: f.modifiedTime ?? "" };
 }
 
 // ---- Changes -------------------------------------------------------------
@@ -214,13 +224,14 @@ export async function moveNode(node: LibraryNode, toParentId: string): Promise<v
 /** Moves a node (and everything inside it) to Drive's trash. */
 export async function trashNode(lib: Library, node: LibraryNode): Promise<void> {
   await trashFile(node.id);
-  // Clean up previews of boards that went to the trash with it.
+  // The previews and images of those boards go to the trash with them.
   const boards = [node, ...descendants(lib, node.id)].filter((n) => n.kind === "board");
-  await Promise.allSettled(
-    boards.map(async (b) => {
-      const thumb = lib.thumbs.get(b.id);
-      if (thumb) await trashFile(thumb.id);
-      forgetThumbnail(b.id);
-    }),
-  );
+  const extras: string[] = [];
+  for (const b of boards) {
+    const thumb = lib.thumbs.get(b.id);
+    if (thumb) extras.push(thumb.id);
+    extras.push(...(lib.images.get(b.id) ?? []));
+    forgetThumbnail(b.id);
+  }
+  await Promise.allSettled(extras.map((id) => trashFile(id)));
 }

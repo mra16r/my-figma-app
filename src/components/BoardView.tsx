@@ -9,10 +9,22 @@ import {
   getSceneVersion,
   serializeAsJSON,
 } from "@excalidraw/excalidraw";
-import type { ExcalidrawInitialDataState, ExcalidrawProps } from "@excalidraw/excalidraw/types";
+import type {
+  ExcalidrawImperativeAPI,
+  ExcalidrawInitialDataState,
+  ExcalidrawProps,
+} from "@excalidraw/excalidraw/types";
 import { msUntilExpiry, requestAccessToken } from "../google/auth";
 import { AuthExpiredError } from "../google/drive";
-import { removeThumbnail, saveBoard, saveThumbnail } from "../storage/boards";
+import {
+  downloadImage,
+  removeThumbnail,
+  saveBoard,
+  saveThumbnail,
+  trashUnusedImages,
+  uploadImage,
+  type BoardImage,
+} from "../storage/boards";
 import { renameNode } from "../storage/library";
 import { NameDialog } from "./Dialogs";
 import { BackIcon } from "./icons";
@@ -20,7 +32,18 @@ import { BackIcon } from "./icons";
 type ChangeArgs = Parameters<NonNullable<ExcalidrawProps["onChange"]>>;
 type SaveStatus = "saved" | "unsaved" | "saving" | "expired" | "error";
 
-export type BoardInfo = { id: string; name: string; parentId: string | null };
+export type BoardInfo = { id: string; name: string; parentId: string | null; modifiedTime: string };
+
+const IMAGE_DOWNLOADS_AT_ONCE = 4;
+
+/** Excalidraw file ids used by image shapes still on the board. */
+function usedImageIds(elements: ExcalidrawInitialDataState["elements"]): Set<string> {
+  const ids = new Set<string>();
+  for (const el of elements ?? []) {
+    if (el.type === "image" && !el.isDeleted && el.fileId) ids.add(el.fileId);
+  }
+  return ids;
+}
 
 // Clean, FigJam-like defaults instead of Excalidraw's hand-drawn look.
 // Everything here can still be changed per element from the style panel.
@@ -39,17 +62,29 @@ type Props = {
   board: BoardInfo;
   hasThumbnail: boolean;
   initialData: ExcalidrawInitialDataState;
+  /** Images of this board already stored in Drive. */
+  images: BoardImage[];
   email: string;
   onBack: () => void;
   onSignOut: () => void;
 };
 
-export default function BoardView({ board, hasThumbnail, initialData, email, onBack, onSignOut }: Props) {
+export default function BoardView({ board, hasThumbnail, initialData, images, email, onBack, onSignOut }: Props) {
   const [status, setStatus] = useState<SaveStatus>("saved");
   const [errorText, setErrorText] = useState("");
   const [name, setName] = useState(board.name);
   const [renaming, setRenaming] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
+  const [imagesLeft, setImagesLeft] = useState(0);
+
+  /** Excalidraw file id → Drive file id, for images already uploaded. */
+  const driveImages = useRef(new Map(images.map((i) => [i.fileId, i.driveId])));
+  /** Images we downloaded from Drive (they don't count as new changes). */
+  const fromDrive = useRef(new Set<string>());
+  const imagesReady = useRef(false);
+  /** Boards saved before Phase 4 keep images inside the board file; move them out. */
+  const hasInlineImages = useRef(Object.keys(initialData.files ?? {}).length > 0);
 
   const latest = useRef<ChangeArgs | null>(null);
   const currentSig = useRef<string | null>(null);
@@ -79,7 +114,8 @@ export default function BoardView({ board, hasThumbnail, initialData, email, onB
   const updateThumbnail = useCallback(
     async (force: boolean) => {
       if (thumbInflight.current) await thumbInflight.current;
-      if (!latest.current || !thumbDirty.current) return;
+      // Wait for images to arrive from Drive, or the preview would miss them.
+      if (!latest.current || !thumbDirty.current || !imagesReady.current) return;
       if (!force && Date.now() - thumbAt.current < THUMB_INTERVAL_MS) return;
       const [elements, appState, files] = latest.current;
       thumbDirty.current = false;
@@ -127,8 +163,18 @@ export default function BoardView({ board, hasThumbnail, initialData, email, onB
     const [elements, appState, files] = latest.current;
     const job = (async () => {
       try {
-        await saveBoard(board.id, serializeAsJSON(elements, appState, files, "local"));
+        // 1. Upload new images first, so the board never points at a missing image.
+        for (const el of elements) {
+          if (el.type !== "image" || el.isDeleted || !el.fileId) continue;
+          if (driveImages.current.has(el.fileId)) continue;
+          const file = files[el.fileId];
+          if (!file) continue; // still being added; a later save picks it up
+          driveImages.current.set(el.fileId, await uploadImage(board.id, file));
+        }
+        // 2. Save the board itself, without the image data.
+        await saveBoard(board.id, serializeAsJSON(elements, appState, {}, "local"));
         savedSig.current = sig;
+        hasInlineImages.current = false;
         setErrorText("");
       } catch (err) {
         if (err instanceof AuthExpiredError) {
@@ -166,11 +212,20 @@ export default function BoardView({ board, hasThumbnail, initialData, email, onB
   const onChange = useCallback<NonNullable<ExcalidrawProps["onChange"]>>(
     (elements, appState, files) => {
       latest.current = [elements, appState, files];
-      const sig = `${getSceneVersion(elements)}|${Object.keys(files).length}|${appState.viewBackgroundColor}`;
+      // Images downloaded from Drive aren't edits, so only count the others.
+      let newFiles = 0;
+      for (const id in files) if (!fromDrive.current.has(id)) newFiles++;
+      const sig = `${getSceneVersion(elements)}|${newFiles}|${appState.viewBackgroundColor}`;
       if (savedSig.current === null) {
         // First call after loading: this is what's already in Drive.
-        savedSig.current = sig;
         currentSig.current = sig;
+        if (!hasInlineImages.current) {
+          savedSig.current = sig;
+          return;
+        }
+        // Old board with images inside the file: save once to move them out.
+        savedSig.current = "move-inline-images";
+        timer.current = window.setTimeout(save, SAVE_DELAY_MS);
         return;
       }
       if (sig === currentSig.current) return; // only selection/scroll changed
@@ -216,6 +271,41 @@ export default function BoardView({ board, hasThumbnail, initialData, email, onB
     };
   }, [flush, updateThumbnail]);
 
+  // Download this board's images from Drive and hand them to the canvas.
+  useEffect(() => {
+    if (!api) return;
+    let alive = true;
+    const used = usedImageIds(initialData.elements);
+    const queue = images.filter((i) => used.has(i.fileId) && !initialData.files?.[i.fileId]);
+    let left = queue.length;
+    setImagesLeft(left);
+    const worker = async () => {
+      for (let image = queue.shift(); image && alive; image = queue.shift()) {
+        try {
+          const file = await downloadImage(image);
+          if (!alive) return;
+          fromDrive.current.add(image.fileId);
+          api.addFiles([file]);
+        } catch (err) {
+          if (err instanceof AuthExpiredError) {
+            expired.current = true;
+            setStatus("expired");
+          }
+          console.warn("Could not load image", image.fileId, err);
+        }
+        setImagesLeft(--left);
+      }
+    };
+    void Promise.all(Array.from({ length: IMAGE_DOWNLOADS_AT_ONCE }, worker)).then(() => {
+      if (alive) imagesReady.current = true;
+    });
+    // Images removed from the board in an earlier visit are no longer needed.
+    void trashUnusedImages(images, used, board.modifiedTime).catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [api, images, initialData, board.modifiedTime]);
+
   const goBack = async () => {
     if (leaving) return;
     setLeaving(true);
@@ -252,7 +342,7 @@ export default function BoardView({ board, hasThumbnail, initialData, email, onB
   const renderTopRightUI = () => (
     <div className="board-topright">
       <div className="save-status" data-status={status} title={errorText || undefined}>
-        {status === "saved" && "Saved"}
+        {status === "saved" && (imagesLeft > 0 ? `Loading ${imagesLeft} image${imagesLeft > 1 ? "s" : ""}…` : "Saved")}
         {status === "unsaved" && "Unsaved changes"}
         {status === "saving" && "Saving…"}
         {status === "error" && "Couldn't save, retrying"}
@@ -274,7 +364,13 @@ export default function BoardView({ board, hasThumbnail, initialData, email, onB
 
   return (
     <div className="board-page">
-      <Excalidraw initialData={data} onChange={onChange} name={name} renderTopRightUI={renderTopRightUI}>
+      <Excalidraw
+        initialData={data}
+        excalidrawAPI={setApi}
+        onChange={onChange}
+        name={name}
+        renderTopRightUI={renderTopRightUI}
+      >
         <MainMenu>
           <MainMenu.Item onSelect={goBack}>Back to all boards</MainMenu.Item>
           <MainMenu.Item onSelect={() => setRenaming(true)}>Rename board…</MainMenu.Item>

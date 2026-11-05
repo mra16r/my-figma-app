@@ -83,21 +83,37 @@ export async function listAllFiles(): Promise<DriveFile[]> {
   return files;
 }
 
+/** All non-trashed files matching a Drive search query, across all pages. */
 export async function findFiles(query: string): Promise<DriveFile[]> {
-  const params = new URLSearchParams({
-    q: `${query} and trashed = false`,
-    fields: `files(${FILE_FIELDS})`,
-    spaces: "drive",
-    pageSize: "100",
-  });
-  const res = await driveFetch(`${API}/files?${params}`);
-  const body = await res.json();
-  return body.files as DriveFile[];
+  const files: DriveFile[] = [];
+  let pageToken: string | undefined;
+  do {
+    const params = new URLSearchParams({
+      q: `${query} and trashed = false`,
+      fields: `nextPageToken,files(${FILE_FIELDS})`,
+      spaces: "drive",
+      pageSize: "1000",
+    });
+    if (pageToken) params.set("pageToken", pageToken);
+    const res = await driveFetch(`${API}/files?${params}`);
+    const body = await res.json();
+    files.push(...(body.files as DriveFile[]));
+    pageToken = body.nextPageToken;
+  } while (pageToken);
+  return files;
+}
+
+/** Finds files tagged with all the given appProperties. */
+export function findByProperties(props: Record<string, string>): Promise<DriveFile[]> {
+  const clauses = Object.entries(props).map(
+    ([key, value]) => `appProperties has { key='${q(key)}' and value='${q(value)}' }`,
+  );
+  return findFiles(clauses.join(" and "));
 }
 
 /** Finds files tagged with appProperties[key] = value. */
 export function findByProperty(key: string, value: string): Promise<DriveFile[]> {
-  return findFiles(`appProperties has { key='${q(key)}' and value='${q(value)}' }`);
+  return findByProperties({ [key]: value });
 }
 
 export async function getFile(fileId: string): Promise<DriveFile> {
