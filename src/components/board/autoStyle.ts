@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { CaptureUpdateAction, newElementWith, restoreElements } from "@excalidraw/excalidraw";
+import { CaptureUpdateAction, mutateElement, newElementWith, restoreElements } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { placeLabel, repairText, type TextLike } from "./textLayout";
@@ -57,9 +57,21 @@ export function useAutoStyles(api: ExcalidrawImperativeAPI | null): void {
         if (m) sectionNumber = Math.max(sectionNumber, Number(m[1]));
       }
 
+      const sectionLook = (el: ExcalidrawElement) => ({
+        name: "name" in el && el.name && el.name !== "Frame" ? el.name : `Section ${++sectionNumber}`,
+        backgroundColor: SECTION_FILL,
+        strokeColor: SECTION_STROKE,
+        customData: { ...el.customData, section: true },
+      });
+
       // Not the shape being drawn right now: replacing it would stop Excalidraw
-      // from sizing it (a new section stayed tiny).
-      const drawing = api.getAppState().newElement?.id;
+      // from sizing it (a new section stayed tiny). A section being drawn is
+      // styled in place instead, so it looks like a section while it's dragged out.
+      const newElement = api.getAppState().newElement;
+      const drawing = newElement?.id;
+      if (newElement && !newElement.isDeleted && isSection(newElement) && !newElement.customData?.section) {
+        mutateElement(newElement, sectionLook(newElement) as never);
+      }
 
       for (const el of elements) {
         if (el.isDeleted || el.id === drawing) continue;
@@ -115,12 +127,7 @@ export function useAutoStyles(api: ExcalidrawImperativeAPI | null): void {
           }
           if (Object.keys(patch).length) patches.set(el.id, patch);
         } else if (isSection(el) && !el.customData?.section) {
-          patches.set(el.id, {
-            name: el.name && el.name !== "Frame" ? el.name : `Section ${++sectionNumber}`,
-            backgroundColor: SECTION_FILL,
-            strokeColor: SECTION_STROKE,
-            customData: { ...el.customData, section: true },
-          });
+          patches.set(el.id, sectionLook(el));
         }
       }
 

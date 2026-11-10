@@ -24,6 +24,8 @@
 // 11. New text in a shape gets the size the app asks for (__mfaLabelSize: sticky
 //     notes start at Medium, like FigJam asks for here).
 // 12. Snap guides in FigJam blue, without Excalidraw's little crosses.
+// 15. Clicking inside a section picks what's there (an image, a shape) before the
+//     section itself.
 // Each change is an exact text replacement; if Excalidraw changes, this stops
 // with a clear message instead of silently doing nothing. Changes already in
 // place are skipped, so new ones can be added to an installed copy.
@@ -85,6 +87,11 @@ const WEIGHT = `\${o.customData?.bold ? "bold " : ""}`;
 const WEIGHT_MIN = `\${o.customData?.bold?"bold ":""}`;
 // The size is the number right before "px".
 const SIZE_OF = (v) => `parseFloat((${v}.match(/([\\d.]+)px/) || [])[1] ?? ${v})`;
+
+// 15. Sections are filled, so Excalidraw would count a click anywhere inside one as a
+//     click on the section (and sections sit above what's in them). Sections now come
+//     last: what's under the pointer inside them is picked first.
+const IS_FRAME = (v) => `(${v}.type==="frame"||${v}.type==="magicframe")`;
 
 const HANDLES_DEV = (width) =>
   `      context.lineWidth = ${width} / appState.zoom.value;\n      if (renderConfig.selectionColor) {\n        context.strokeStyle = renderConfig.selectionColor;\n      }\n      if (key === "rotation") {`;
@@ -178,6 +185,10 @@ const patches = [
         "u=(l&&i&&globalThis.__mfaLabelSize?.(i))||this.state.currentItemFontSize;if(!c&&l&&i&&!Ne(i)){",
       ],
       ['var c5="#ff6b6b",d5="#ff0000",G1=1,Y1=2,', `var c5="${BLUE}",d5="${BLUE}",G1=1,Y1=0,`],
+      [
+        ".filter(c=>Qr(c)?(a.push(c),!1):!0).concat(a)}getElementHitThreshold(){",
+        `.filter(c=>Qr(c)?(a.push(c),!1):!0).concat(a).sort((c,m)=>${IS_FRAME("m")}-${IS_FRAME("c")})}getElementHitThreshold(){`,
+      ],
     ],
   },
   {
@@ -284,6 +295,10 @@ const patches = [
       [
         'var SNAP_COLOR_LIGHT = "#ff6b6b";\nvar SNAP_COLOR_DARK = "#ff0000";\nvar SNAP_WIDTH = 1;\nvar SNAP_CROSS_SIZE = 2;',
         `var SNAP_COLOR_LIGHT = "${BLUE}";\nvar SNAP_COLOR_DARK = "${BLUE}";\nvar SNAP_WIDTH = 1;\nvar SNAP_CROSS_SIZE = 0;`,
+      ],
+      [
+        "    }).concat(iframeLikes);\n    return elements;\n  }\n  getElementHitThreshold() {",
+        `    }).concat(iframeLikes);\n    elements.sort((a, b) => ${IS_FRAME("b")} - ${IS_FRAME("a")});\n    return elements;\n  }\n  getElementHitThreshold() {`,
       ],
     ],
   },

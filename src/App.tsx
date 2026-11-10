@@ -5,7 +5,9 @@ import SignInScreen from "./components/SignInScreen";
 import {
   getValidToken,
   isGoogleSignInLoaded,
+  keepSignedIn,
   loadGoogleSignIn,
+  onTokenRenewed,
   rememberEmail,
   requestAccessToken,
   signOut,
@@ -73,7 +75,19 @@ export default function App() {
       .catch((err) => setSession({ kind: "signedOut", error: message(err) }));
     if (getValidToken()) void startSession();
     else setSession({ kind: "signedOut" });
+    keepSignedIn();
   }, [startSession]);
+
+  // A new token while signed out (sign-in button, or renewed on a click): go on in.
+  const sessionKind = useRef(session.kind);
+  sessionKind.current = session.kind;
+  useEffect(
+    () =>
+      onTokenRenewed(() => {
+        if (sessionKind.current === "signedOut") void startSession();
+      }),
+    [startSession],
+  );
 
   // Coming back from a board: reload so names, dates and previews are fresh.
   const lastRouteKind = useRef(route.kind);
@@ -85,10 +99,9 @@ export default function App() {
   }, [route.kind, session.kind, refresh]);
 
   // Called straight from the button click so the Google popup isn't blocked.
+  // (The new token starts the session, see onTokenRenewed above.)
   const handleSignIn = () => {
-    requestAccessToken()
-      .then(startSession)
-      .catch((err) => setSession({ kind: "signedOut", error: message(err) }));
+    requestAccessToken().catch((err) => setSession({ kind: "signedOut", error: message(err) }));
   };
 
   const handleSignOut = () => {

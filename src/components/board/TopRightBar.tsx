@@ -32,7 +32,7 @@ export function TopRightBar({ status, errorText, imagesLeft, email, onReconnect,
         {label}
       </span>
       {status === "expired" && (
-        <button type="button" className="fx-button fx-button--primary" onClick={onReconnect}>
+        <button type="button" className="fx-button fx-button--primary" data-signin onClick={onReconnect}>
           Reconnect
         </button>
       )}

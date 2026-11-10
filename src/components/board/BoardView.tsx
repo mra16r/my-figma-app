@@ -18,7 +18,7 @@ import type {
   ExcalidrawInitialDataState,
   NormalizedZoomValue,
 } from "@excalidraw/excalidraw/types";
-import { msUntilExpiry, requestAccessToken } from "../../google/auth";
+import { msUntilExpiry, onTokenRenewed, requestAccessToken } from "../../google/auth";
 import { AuthExpiredError } from "../../google/drive";
 import {
   downloadImage,
@@ -332,14 +332,29 @@ export default function BoardView({ board, location, hasThumbnail, content, imag
     [],
   );
 
-  // Show "Reconnect" as soon as the Google sign-in runs out.
+  // A new Google token (renewed on a click, or "Reconnect"): carry on saving.
+  const [tokenVersion, setTokenVersion] = useState(0);
+  useEffect(
+    () =>
+      onTokenRenewed(() => {
+        setTokenVersion((v) => v + 1);
+        if (!expired.current) return;
+        expired.current = false;
+        setErrorText("");
+        if (currentSig.current !== savedSig.current) void saveRef.current();
+        else setStatus("saved");
+      }),
+    [],
+  );
+
+  // Show "Reconnect" if the Google sign-in runs out before it could be renewed.
   useEffect(() => {
     const id = window.setTimeout(() => {
       expired.current = true;
       setStatus("expired");
     }, msUntilExpiry());
     return () => window.clearTimeout(id);
-  }, [status === "expired"]);
+  }, [status === "expired", tokenVersion]);
 
   useEffect(() => {
     const onHide = () => document.visibilityState === "hidden" && void saveRef.current();
@@ -498,15 +513,9 @@ export default function BoardView({ board, location, hasThumbnail, content, imag
     onSignOut();
   };
 
+  // (The new token resumes saving, see onTokenRenewed above.)
   const reconnect = () => {
-    requestAccessToken()
-      .then(() => {
-        expired.current = false;
-        setErrorText("");
-        if (currentSig.current !== savedSig.current) void saveRef.current();
-        else setStatus("saved");
-      })
-      .catch((err) => setErrorText(err instanceof Error ? err.message : String(err)));
+    requestAccessToken().catch((err) => setErrorText(err instanceof Error ? err.message : String(err)));
   };
 
   const pageName = pages.find((p) => p.id === currentPage)?.name ?? "Page";

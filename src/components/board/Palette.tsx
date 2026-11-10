@@ -251,7 +251,14 @@ export function ColorPopover<T extends string>({
           </button>
         ))}
         {custom && (
-          <button type="button" className="fx-color-cell" data-tip="Custom color" aria-label="Custom color" onClick={() => customInput.current?.click()}>
+          <button
+            type="button"
+            className="fx-color-cell"
+            data-tip="Custom color"
+            aria-label="Custom color"
+            data-gesture
+            onClick={() => customInput.current?.click()}
+          >
             <span className="fx-color-dot fx-color-custom" />
           </button>
         )}
