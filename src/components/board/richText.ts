@@ -776,6 +776,9 @@ class RichTextEditor extends HTMLElement {
   };
 
   private onCopy = (event: ClipboardEvent) => {
+    // Copying while typing copies letters only: Excalidraw's own copy (listening on
+    // the page) would copy the board's selection over them.
+    event.stopPropagation();
     this.readSelection();
     if (this.start === this.end) return;
     event.preventDefault();

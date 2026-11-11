@@ -24,6 +24,11 @@
 // 11. New text in a shape gets the size the app asks for (__mfaLabelSize: sticky
 //     notes start at Medium, like FigJam asks for here).
 // 12. Snap guides in FigJam blue, without Excalidraw's little crosses.
+// 13. Copy puts the real text on the clipboard: the app writes it (__mfaCopy, see
+//     src/components/board/clipboard.ts) and keeps the board data for pasting back
+//     in, which paste reads first (__mfaPasteData).
+// 14. Dropping several images places them all (__mfaDropImages, see
+//     src/components/board/imageDrop.ts); Excalidraw only takes the first file.
 // 15. Clicking inside a section picks what's there (an image, a shape) before the
 //     section itself.
 // Each change is an exact text replacement; if Excalidraw changes, this stops
@@ -160,6 +165,14 @@ const patches = [
       ],
       ["n.font=Ee(e),n.fillStyle=e.strokeColor,n.textAlign=e.textAlign", "n.font=Ee(e),n.fillStyle=__ink,n.textAlign=e.textAlign"],
       ["A1=(e,t,n)=>n.theme===ke.DARK&&", "A1=(e,t,n)=>!globalThis.__mfaInk&&n.theme===ke.DARK&&"],
+      [
+        "Np=async(e,t,n)=>{await hs(W7({elements:e,files:t}),n)}",
+        "Np=async(e,t,n)=>{let __j=W7({elements:e,files:t});if(globalThis.__mfaCopy&&await globalThis.__mfaCopy(e,__j,n))return;await hs(__j,n)}",
+      ],
+      [
+        "vK=async(e,t=!1)=>{let n=await j7(e,t);",
+        "vK=async(e,t=!1)=>{let __b=globalThis.__mfaPasteData?.(e,t);if(__b)return __b;let n=await j7(e,t);",
+      ],
     ],
   },
   {
@@ -185,6 +198,10 @@ const patches = [
         "u=(l&&i&&globalThis.__mfaLabelSize?.(i))||this.state.currentItemFontSize;if(!c&&l&&i&&!Ne(i)){",
       ],
       ['var c5="#ff6b6b",d5="#ff0000",G1=1,Y1=2,', `var c5="${BLUE}",d5="${BLUE}",G1=1,Y1=0,`],
+      [
+        'C(this,"handleAppOnDrop",async t=>{let{file:r,fileHandle:n}=await Ox(t)',
+        'C(this,"handleAppOnDrop",async t=>{if(globalThis.__mfaDropImages?.(t,this))return;let{file:r,fileHandle:n}=await Ox(t)',
+      ],
       [
         ".filter(c=>Qr(c)?(a.push(c),!1):!0).concat(a)}getElementHitThreshold(){",
         `.filter(c=>Qr(c)?(a.push(c),!1):!0).concat(a).sort((c,m)=>${IS_FRAME("m")}-${IS_FRAME("c")})}getElementHitThreshold(){`,
@@ -265,6 +282,14 @@ const patches = [
         "  return appState.theme === THEME.DARK && isInitializedImageElement(element)",
         "  return !globalThis.__mfaInk && appState.theme === THEME.DARK && isInitializedImageElement(element)",
       ],
+      [
+        "var copyToClipboard = async (elements, files, clipboardEvent) => {\n  await copyTextToSystemClipboard(\n    serializeAsClipboardJSON({ elements, files }),\n    clipboardEvent\n  );\n};",
+        "var copyToClipboard = async (elements, files, clipboardEvent) => {\n  const __json = serializeAsClipboardJSON({ elements, files });\n  if (globalThis.__mfaCopy && await globalThis.__mfaCopy(elements, __json, clipboardEvent)) return;\n  await copyTextToSystemClipboard(__json, clipboardEvent);\n};",
+      ],
+      [
+        "var parseClipboard = async (event, isPlainPaste = false) => {\n",
+        "var parseClipboard = async (event, isPlainPaste = false) => {\n  const __board = globalThis.__mfaPasteData?.(event, isPlainPaste);\n  if (__board) return __board;\n",
+      ],
     ],
   },
   {
@@ -295,6 +320,10 @@ const patches = [
       [
         'var SNAP_COLOR_LIGHT = "#ff6b6b";\nvar SNAP_COLOR_DARK = "#ff0000";\nvar SNAP_WIDTH = 1;\nvar SNAP_CROSS_SIZE = 2;',
         `var SNAP_COLOR_LIGHT = "${BLUE}";\nvar SNAP_COLOR_DARK = "${BLUE}";\nvar SNAP_WIDTH = 1;\nvar SNAP_CROSS_SIZE = 0;`,
+      ],
+      [
+        '    __publicField(this, "handleAppOnDrop", async (event) => {\n',
+        '    __publicField(this, "handleAppOnDrop", async (event) => {\n      if (globalThis.__mfaDropImages?.(event, this)) return;\n',
       ],
       [
         "    }).concat(iframeLikes);\n    return elements;\n  }\n  getElementHitThreshold() {",

@@ -36,6 +36,8 @@ import {
 import { renameNode } from "../../storage/library";
 import { useAutoStyles } from "./autoStyle";
 import { CanvasOverlay, STICKY_SIZE, useArrowCursor, useDotGrid } from "./CanvasFeel";
+import "./clipboard"; // copy gives the real text
+import "./imageDrop"; // dropping several images places them all
 import { SectionLayer, withSectionBackgrounds } from "./SectionLayer";
 import { FilePanel, type PageMeta } from "./FilePanel";
 import type { MenuEntry } from "./Menu";
