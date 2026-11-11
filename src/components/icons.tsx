@@ -87,6 +87,19 @@ export const MoonIcon = ({ size }: IconProps) => (
   </svg>
 );
 
+export const NoteIcon = ({ size }: IconProps) => (
+  <svg {...base(size)}>
+    <path d="M5 4h14v10.5L13.5 20H5z" />
+    <path d="M13.5 20v-5.5H19M8.5 8.5h7M8.5 12h4" />
+  </svg>
+);
+
+export const CloseIcon = ({ size }: IconProps) => (
+  <svg {...base(size)}>
+    <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />
+  </svg>
+);
+
 export const MonitorIcon = ({ size }: IconProps) => (
   <svg {...base(size)}>
     <rect x="3" y="4" width="18" height="12.5" rx="2" />

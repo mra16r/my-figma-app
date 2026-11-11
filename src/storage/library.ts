@@ -18,6 +18,7 @@ import { EMPTY_BOARD, forgetThumbnail, rememberThumbnails } from "./boards";
 //       Ideas/                   role=folder (folders can nest)
 //         Board.excalidraw       role=board
 //     .thumbnails/               role=thumbs (board previews)
+//     Notes.json                 role=notes (see notes.ts)
 // Everything is found by its role tag, so renaming in Drive is safe.
 
 export type NodeKind = "workspace" | "folder" | "board";
@@ -45,6 +46,8 @@ export type Library = {
   images: Map<string, string[]>;
   /** Bytes used in Drive by the app's files. */
   usage: Usage;
+  /** Notes not done yet (see notes.ts). */
+  openNotes: number;
 };
 
 /** Bytes used in Google Drive, by kind. Trashed files still count until deleted. */
@@ -110,12 +113,17 @@ function buildLibrary(rootId: string, files: DriveFile[], trashBytes: number): L
   const thumbs = new Map<string, Thumb>();
   const images = new Map<string, string[]>();
   const usage: Usage = { boards: 0, images: 0, previews: 0, trash: trashBytes };
+  let openNotes = 0;
 
   for (const f of files) {
     const r = role(f);
     if (r === "board") usage.boards += fileBytes(f);
     else if (r === "image") usage.images += fileBytes(f);
     else if (r === "thumb") usage.previews += fileBytes(f);
+    if (r === "notes") {
+      openNotes = Number(f.appProperties?.open ?? 0) || 0;
+      continue;
+    }
     const boardId = f.appProperties?.board;
     if (r === "thumb" && boardId) {
       thumbs.set(boardId, { id: f.id, modifiedTime: f.modifiedTime ?? "" });
@@ -162,7 +170,7 @@ function buildLibrary(rootId: string, files: DriveFile[], trashBytes: number): L
     .sort((a, b) => a.createdTime.localeCompare(b.createdTime));
 
   rememberThumbnails(thumbs);
-  return { rootId, nodes, children, workspaces, thumbs, images, usage };
+  return { rootId, nodes, children, workspaces, thumbs, images, usage, openNotes };
 }
 
 /** Workspace → … → node, for breadcrumbs. */

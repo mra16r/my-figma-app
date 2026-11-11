@@ -823,6 +823,165 @@ button.danger-link {
   color: var(--danger);
 }
 
+/* ---- Notes page ---- */
+.notes-count {
+  margin-left: auto;
+  min-width: 18px;
+  padding: 1px 6px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.notes-intro {
+  margin: -8px 0 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.notes-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.notes-status[data-status="error"] {
+  color: var(--danger);
+}
+
+.notes {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 720px;
+}
+
+.note-add {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 6px 6px 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.note-add:focus-within {
+  border-color: var(--accent);
+}
+
+.note-add-input,
+.note-text {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  resize: none;
+  overflow: hidden;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.note-add-input {
+  padding: 6px;
+  outline: none;
+}
+
+.note-add-input::placeholder {
+  color: var(--muted);
+}
+
+.notes-empty {
+  margin: 4px 2px;
+  font-size: 14px;
+}
+
+.notes-heading {
+  margin: 12px 2px 0;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.note-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.note-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 6px 6px 14px;
+}
+
+.note-row + .note-row {
+  border-top: 1px solid var(--border);
+}
+
+.note-check {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 8px 0 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.note-text {
+  padding: 5px 6px;
+}
+
+.note-text:hover {
+  background: var(--hover);
+}
+
+.note-text:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  background: none;
+}
+
+.note-row[data-done] .note-text {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.note-delete {
+  flex: none;
+  opacity: 0;
+}
+
+.note-row:hover .note-delete,
+.note-row:focus-within .note-delete {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .note-delete {
+    opacity: 1;
+  }
+}
+
 /* ---- Storage dialog ---- */
 .storage {
   --seg-boards: #9747ff;

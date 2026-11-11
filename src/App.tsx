@@ -155,7 +155,7 @@ export default function App() {
     <HomeScreen
       library={library}
       containerId={containerId}
-      section={route.kind === "trash" ? "trash" : "folder"}
+      section={route.kind === "trash" || route.kind === "notes" ? route.kind : "folder"}
       email={session.email}
       onRefresh={refresh}
       onSignOut={handleSignOut}

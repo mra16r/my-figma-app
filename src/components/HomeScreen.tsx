@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { formatBytes } from "../format";
-import { goToBoard, goToFolder, goToTrash } from "../router";
+import { goToBoard, goToFolder, goToNotes, goToTrash } from "../router";
 import { thumbnailUrl } from "../storage/boards";
 import {
   countItems,
@@ -25,20 +25,22 @@ import {
   FolderIcon,
   MonitorIcon,
   MoonIcon,
+  NoteIcon,
   PlusIcon,
   SunIcon,
   TrashIcon,
   WorkspaceIcon,
 } from "./icons";
 import { setThemeChoice, THEME_CHOICES, useTheme, type ThemeChoice } from "../theme";
+import NotesView from "./NotesView";
 import StorageDialog from "./StorageDialog";
 import TrashView from "./TrashView";
 
 type Props = {
   library: Library;
   containerId: string;
-  /** Show a folder's content, or the trash. */
-  section: "folder" | "trash";
+  /** Show a folder's content, the trash, or your notes. */
+  section: "folder" | "trash" | "notes";
   email: string;
   onRefresh: () => Promise<void>;
   onSignOut: () => void;
@@ -56,6 +58,9 @@ type Dialog =
 export default function HomeScreen({ library, containerId, section, email, onRefresh, onSignOut, onAuthExpired }: Props) {
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [showStorage, setShowStorage] = useState(false);
+  // The notes page reports changes here, before Drive has the new count.
+  const [noteCount, setNoteCount] = useState<number | null>(null);
+  const openNotes = noteCount ?? library.openNotes;
   const container = library.nodes.get(containerId)!;
   const path = pathTo(library, containerId);
   const workspaceId = section === "folder" ? path[0]?.id : undefined;
@@ -116,6 +121,17 @@ export default function HomeScreen({ library, containerId, section, email, onRef
         </nav>
 
         <div className="sidebar-extra">
+          <div className="workspace-row" data-active={section === "notes"}>
+            <button type="button" className="workspace-link" onClick={goToNotes} title="Changes to make">
+              <NoteIcon size={16} />
+              <span>Notes</span>
+              {openNotes > 0 && (
+                <span className="notes-count" aria-label={`${openNotes} to do`}>
+                  {openNotes}
+                </span>
+              )}
+            </button>
+          </div>
           <div className="workspace-row" data-active={section === "trash"}>
             <button type="button" className="workspace-link" onClick={goToTrash}>
               <TrashIcon size={16} />
@@ -143,6 +159,8 @@ export default function HomeScreen({ library, containerId, section, email, onRef
       <main className="content">
         {section === "trash" ? (
           <TrashView library={library} onRefresh={onRefresh} onAuthExpired={onAuthExpired} />
+        ) : section === "notes" ? (
+          <NotesView rootId={library.rootId} onOpenCountChange={setNoteCount} onAuthExpired={onAuthExpired} />
         ) : (
         <>
         <header className="content-header">

@@ -5,14 +5,17 @@ import { useSyncExternalStore } from "react";
 //   #/f/<id>      a workspace or folder
 //   #/b/<id>      a board
 //   #/trash       the app's trash
+//   #/notes       personal notes (changes to make)
 
 export type Route =
   | { kind: "home"; containerId?: string }
   | { kind: "board"; boardId: string }
-  | { kind: "trash" };
+  | { kind: "trash" }
+  | { kind: "notes" };
 
 function parse(hash: string): Route {
   if (hash.startsWith("#/trash")) return { kind: "trash" };
+  if (hash.startsWith("#/notes")) return { kind: "notes" };
   const board = hash.match(/^#\/b\/([\w-]+)/);
   if (board) return { kind: "board", boardId: board[1] };
   const folder = hash.match(/^#\/f\/([\w-]+)/);
@@ -50,4 +53,8 @@ export function goToBoard(id: string): void {
 
 export function goToTrash(): void {
   window.location.hash = "#/trash";
+}
+
+export function goToNotes(): void {
+  window.location.hash = "#/notes";
 }
