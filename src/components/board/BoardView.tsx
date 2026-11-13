@@ -40,6 +40,7 @@ import "./clipboard"; // copy gives the real text
 import "./imageDrop"; // dropping several images places them all
 import { SectionLayer, withSectionBackgrounds } from "./SectionLayer";
 import { FilePanel, type PageMeta } from "./FilePanel";
+import { download, ImageInfo, useStampNewImages } from "./imageInfo";
 import type { MenuEntry } from "./Menu";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { INTER_FONT } from "./textLayout";
@@ -48,6 +49,7 @@ import { selectTool, Toolbar } from "./Toolbar";
 import { getToolStyles, useToolStyles } from "./toolStyles";
 import { Tooltips } from "./Tooltips";
 import { TopRightBar, type SaveStatus } from "./TopRightBar";
+import { useSmoothWheelZoom } from "./smoothZoom";
 import { ZoomControls, zoomBy, zoomTo, zoomToFit } from "./ZoomControls";
 import { setThemeChoice, THEME_CHOICES, useTheme } from "../../theme";
 import { setInkLookup } from "./darkInk";
@@ -115,15 +117,6 @@ function press(init: KeyboardEventInit) {
 }
 const CTRL = { ctrlKey: true, metaKey: true };
 
-function download(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename.replace(/[\\/:*?"<>|]+/g, "-");
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
-}
-
 const pageKey = (boardId: string) => `mfa.page.${boardId}`;
 
 export default function BoardView({ board, location, hasThumbnail, content, images, email, onBack, onSignOut }: Props) {
@@ -172,6 +165,8 @@ export default function BoardView({ board, location, hasThumbnail, content, imag
   const thumbDirty = useRef(!hasThumbnail);
   const thumbAt = useRef(0);
   const thumbInflight = useRef<Promise<void> | null>(null);
+  /** When each image in Drive was uploaded (for images added before they were dated). */
+  const driveTimes = useMemo(() => new Map(images.map((i) => [i.fileId, Date.parse(i.createdTime) || 0])), [images]);
 
   const initialData = useMemo<ExcalidrawInitialDataState>(
     () => ({
@@ -678,7 +673,17 @@ export default function BoardView({ board, location, hasThumbnail, content, imag
     const onKey = (e: KeyboardEvent) => {
       const target = e.target instanceof Element ? e.target : null; // can be the page itself
       if (target?.closest("input, textarea, [contenteditable='true']")) return;
-      if (api.getAppState().editingTextElement || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (api.getAppState().editingTextElement) return;
+      // Ctrl+= / Ctrl+− (and Excalidraw's Shift+= / Shift+−) glide like the zoom buttons.
+      const zoomStep =
+        e.code === "Equal" || e.code === "NumpadAdd" ? 1.25 : e.code === "Minus" || e.code === "NumpadSubtract" ? 1 / 1.25 : 0;
+      if (zoomStep && (e.ctrlKey || e.metaKey || e.shiftKey) && !e.altKey) {
+        zoomBy(api, zoomStep);
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+      }
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       const key = e.key.toLowerCase();
       let handled = true;
       if (key === "s" && !e.shiftKey) selectTool(api, "sticky");
@@ -700,6 +705,8 @@ export default function BoardView({ board, location, hasThumbnail, content, imag
   useArrowCursor(api ? pageEl : null); // once the canvas exists
   useDotGrid(api, pageEl);
   useAutoStyles(api);
+  useStampNewImages(api, () => stored.current.values());
+  useSmoothWheelZoom(api, pageEl);
 
   // Dark mode colors: text needs to know whether its shape is a sticky note.
   useEffect(() => {
@@ -763,12 +770,13 @@ export default function BoardView({ board, location, hasThumbnail, content, imag
               onReconnect={reconnect}
               onSignOut={signOut}
             />
+            <ImageInfo api={api} driveTimes={driveTimes} />
           </div>
           <div className="fx-bottom">
             <Toolbar api={api} />
           </div>
           <ZoomControls api={api} onHelp={() => setShowHelp(true)} />
-          <SelectionToolbar api={api} />
+          <SelectionToolbar api={api} boardName={name} />
           <Tooltips />
           {showHelp && <ShortcutsDialog onClose={() => setShowHelp(false)} />}
         </div>

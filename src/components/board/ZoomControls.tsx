@@ -1,26 +1,15 @@
-import type { ExcalidrawImperativeAPI, NormalizedZoomValue } from "@excalidraw/excalidraw/types";
+import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { HelpIcon, MinusIcon, PlusIcon } from "./icons";
+import { glideZoom, zoomTarget } from "./smoothZoom";
 
-const MIN_ZOOM = 0.1;
-const MAX_ZOOM = 30;
-
-/** Zooms around the middle of the screen. */
+/** Glides to that zoom around the middle of the screen. */
 export function zoomTo(api: ExcalidrawImperativeAPI, value: number): void {
   const s = api.getAppState();
-  const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
-  const cx = s.width / 2;
-  const cy = s.height / 2;
-  api.updateScene({
-    appState: {
-      zoom: { value: next as NormalizedZoomValue },
-      scrollX: s.scrollX + cx / next - cx / s.zoom.value,
-      scrollY: s.scrollY + cy / next - cy / s.zoom.value,
-    },
-  });
+  glideZoom(api, value, s.width / 2, s.height / 2);
 }
 
-export const zoomBy = (api: ExcalidrawImperativeAPI, factor: number) =>
-  zoomTo(api, api.getAppState().zoom.value * factor);
+/** (From where the zoom is heading, so quick clicks add up.) */
+export const zoomBy = (api: ExcalidrawImperativeAPI, factor: number) => zoomTo(api, zoomTarget(api) * factor);
 
 export const zoomToFit = (api: ExcalidrawImperativeAPI) => {
   if (api.getSceneElements().length === 0) return zoomTo(api, 1);

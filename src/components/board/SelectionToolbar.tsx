@@ -28,6 +28,7 @@ import {
   AlignIcon,
   BoldIcon,
   ChevronDown,
+  DownloadIcon,
   FitIcon,
   FontIcon,
   LineStyleIcon,
@@ -37,6 +38,7 @@ import {
   ShapeSwitchIcon,
   StrikeIcon,
 } from "./icons";
+import { downloadSelectedImages, selectedImages } from "./imageInfo";
 import { canConvert, convertShapes, SHAPE_LABELS, SHAPES, shapeOf, type ShapeKind } from "./shapes";
 import {
   activeRichEditor,
@@ -200,7 +202,7 @@ const HEIGHT = 40;
 const EDGE = 8;
 const SECTION_PILL = 34; // the name pill above a section
 
-export function SelectionToolbar({ api }: { api: ExcalidrawImperativeAPI }) {
+export function SelectionToolbar({ api, boardName }: { api: ExcalidrawImperativeAPI; boardName: string }) {
   const [, rerender] = useReducer((n: number) => n + 1, 0);
   const lastKey = useRef("");
   const dragging = useRef(false);
@@ -468,6 +470,23 @@ export function SelectionToolbar({ api }: { api: ExcalidrawImperativeAPI }) {
         />,
       ]);
   }
+
+  // Images (alone or with other things): download each as its own file.
+  const images = editor ? 0 : selectedImages(api).length;
+  if (images)
+    groups.push([
+      <IconButton
+        key="download"
+        label={images > 1 ? `Download ${images} images` : "Download image"}
+        icon={<DownloadIcon />}
+        onClick={() =>
+          void downloadSelectedImages(api, boardName).catch((err) => {
+            console.error("Could not download the images", err);
+            api.setToast({ message: "Couldn't download the images.", duration: 3000 });
+          })
+        }
+      />,
+    ]);
 
   if (!groups.length) return null;
 

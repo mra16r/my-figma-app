@@ -338,6 +338,12 @@ export const ListIcon = ({ size = 24 }: P) => (
   </svg>
 );
 
+export const DownloadIcon = ({ size = 24 }: P) => (
+  <svg {...svg(size)}>
+    <path d="M12 5.5v9M8.5 11l3.5 3.5 3.5-3.5M6.5 15.5v1.5a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5v-1.5" />
+  </svg>
+);
+
 export const FitIcon = ({ size = 24 }: P) => (
   <svg {...svg(size)}>
     <rect x="9" y="9" width="6" height="6" rx="1" />
